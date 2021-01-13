@@ -4,7 +4,7 @@
 2.4
 
 ## Datasets
-CelebA(https://www.tensorflow.org/datasets/catalog/celeb_a)
+[CelebA](https://www.tensorflow.org/datasets/catalog/celeb_a)
 
 ## References
 - Paper
