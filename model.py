@@ -40,7 +40,7 @@ class ResidualBlock(Layer):
                  padding="same", 
                  name="residual_block"):
 
-        super(ResidualBlock, self).__init__()
+        super(ResidualBlock, self).__init__(name=name)
         self.size = size
         self.conv2d_1 = Conv2D(filters, 
                                size, 
@@ -115,10 +115,9 @@ class Downsample(Layer):
                  padding="same",
                  norm_type="instancenorm",
                  activation="relu",
-                 name="downsample", 
-                 **kwargs):
+                 name="downsample"):
 
-        super(Downsample, self).__init__(name=name, **kwargs)
+        super(Downsample, self).__init__(name=name)
         self.norm_type = norm_type
         use_bias = False
         if self.norm_type:
@@ -161,10 +160,9 @@ class Upsample(Layer):
                  norm_type="instancenorm",
                  apply_dropout=False,
                  activation="relu",
-                 name="upsample", 
-                 **kwargs):
+                 name="upsample"):
 
-        super(Upsample, self).__init__(name=name, **kwargs)
+        super(Upsample, self).__init__(name=name)
         self.norm_type = norm_type
         use_bias = False
         if self.norm_type:
@@ -215,15 +213,14 @@ class Discriminator(Model):
         Discriminator model
     """
     def __init__(self,
+                 c_dim,
                  first_filters=64,
                  size=4,
                  norm_type=None,
                  img_size=128,
-                 c_dim,
-                 name="discriminator",
-                 **kwargs):
+                 name="discriminator"):
 
-        super(Discriminator, self).__init__(name=name, **kwargs)
+        super(Discriminator, self).__init__(name=name)
         self.downsample_1 = Downsample(filters=first_filters, 
                                        size=size,
                                        strides=2,
@@ -267,7 +264,7 @@ class Discriminator(Model):
                                        activation="lrelu",
                                        name="d_downsample_6")
         self.conv2d_src = Conv2D(filters=1, 
-                                 ketnel_size=3, 
+                                 kernel_size=3, 
                                  strides=1,
                                  padding="same")
         self.conv2d_cls = Conv2D(filters=c_dim,
@@ -323,10 +320,9 @@ class Generator(Model):
                  first_filters=64,
                  output_channels=3,
                  norm_type="instancenorm", 
-                 name="generator",
-                 **kwargs):
+                 name="generator"):
 
-        super(ResNetGenerator, self).__init__(name=name, **kwargs)
+        super(Generator, self).__init__(name=name)
         self.downsample_1 = Downsample(filters=first_filters, 
                                        size=7,
                                        strides=1,
@@ -390,3 +386,13 @@ class Generator(Model):
         x = Input(shape=INPUT_SHAPE)
         model = Model(inputs=[x], outputs=self.call(x))
         return model.summary()
+
+
+if __name__ == "__main__":
+    test_disc = Discriminator(c_dim=5)
+    print("Check Discriminator's model architecture")
+    test_disc.summary()
+
+    test_gen = Generator()
+    print("Check Generator's model architecture")
+    test_gen.summary()
