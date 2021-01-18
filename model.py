@@ -388,11 +388,19 @@ class Generator(Model):
         return model.summary()
 
 
-if __name__ == "__main__":
-    test_disc = Discriminator(c_dim=5)
-    print("Check Discriminator's model architecture")
-    test_disc.summary()
+def build_model(c_dim):
+    generator = Generator()
+    tf.print("Check Generator's model architecture")
+    generator.summary()
 
-    test_gen = Generator()
-    print("Check Generator's model architecture")
-    test_gen.summary()
+    tf.print("\n\n")
+
+    discriminator = Discriminator(c_dim=5)
+    tf.print("Check Discriminator's model architecture")
+    discriminator.summary()
+
+    return generator, discriminator
+
+
+if __name__ == "__main__":
+    gen, disc = build_model(5)

@@ -22,9 +22,15 @@ def center_crop(img, crop_size=178):
 
 
 def normalize(img):
+    # convert img vals from [0, 255] to [-1, 1]
     img = tf.cast(img, tf.float32)
     img = (img / 127.5) - 1.0
     return img
+
+
+def denormalize(img):
+    # convert img vals from [-1, 1] to [0, 1]
+    return img / 2 + 0.5
 
 
 def random_horizontal_flip(img):
@@ -47,3 +53,23 @@ def preprocess(img, center_crop_size=178, resize=128):
     img = resize(img, resize)
     img = normalize(img)
     return img
+
+
+def get_gradient_penalty(x, x_gen, discriminator):
+    """
+    for the implementation of the gradient penalty, I referred to the links below.
+    https://github.com/timsainb/tensorflow2-generative-models/blob/master/3.0-WGAN-GP-fashion-mnist.ipynb
+    https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
+    """
+    # shape=[x.shape[0], 1, 1, 1] to generate a random number for every sample
+    epsilon = tf.random_uniform(shape=[x.shape[0], 1, 1, 1], 0.0, 1.0)
+    x_hat = epsilon * x + (1 - epsilon) * x_gen
+    with tf.GradientTape() as tape:
+        # to get a gradient w.r.t x_hat, we need to record the value on the tape
+        t.watch(x_hat)
+        d_hat = discriminator(x_hat)
+    
+    gradients = tape.gradient(d_hat, x_hat)
+    l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
+    gp = tf.reduce_mean((l2_norm - 1.0) ** 2)
+    return gp

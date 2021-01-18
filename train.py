@@ -14,6 +14,7 @@ flags.DEFINE_string("attr_path",
 flags.DEFINE_list("selected_attrs",
                   "Black_Hair, Blond_Hair, Brown_Hair, Male, Young",
                   "attributes for training")
+flags.DEFINE_integer("c_dim", 5, "dimension of domain labels")
 
 
 def main(argv):
@@ -23,6 +24,8 @@ def main(argv):
     train_dataset = tf.data.Dataset.from_tensor_slices((train_imgs, train_lbls))
     for img, lbl in train_dataset.take(5):
         print(img, lbl)
+
+    gen, disc = model.build_model(FLAGS.c_dim)
 
 
 
