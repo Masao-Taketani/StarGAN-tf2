@@ -17,24 +17,42 @@ flags.DEFINE_list("selected_attrs",
                   "attributes for training")
 flags.DEFINE_integer("c_dim", 5, "dimension of domain labels")
 flags.DEFINE_integer("batch_size", 16, "mini-batch size")
+flags.DEFINE_string("ckpt_path", "ckpts/train/", "path to the checkpoints")
 
 
 def main(argv):
+    AUTOTUNE = tf.data.experimental.AUTOTUNE
+
     train_imgs, train_lbls, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
                                                             FLAGS.selected_attrs)
-    # prepare for training dataset
+    # Prepare the dataset for training and testing
     train_dataset = tf.data.Dataset.from_tensor_slices((train_imgs, train_lbls))
-    train_dataset = tf.data.Dataset.map()
-    for img, lbl in train_dataset.take(5):
-        print(img, lbl)
+    train_dataset = tf.data.Dataset.map(preprocess_for_training,
+                                        num_parallel_calls=AUTOTUNE).cache().shuffle()
+    for img, lbl_org, lbl_trg in train_dataset.take(5):
+        print(img, label_org, label_trg)
 
-    # Get fixed inputs for debugging
+    """
+    # Get fixed inputs for debugging.
     label_org
     label_trg = tf.random.shuffle(label_org)
-    targ_label = orig_label[rand_idxes]
+
+    # Define losses
+    classification_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+
+    # Set the checkpoint and the checkpoint manager.
+    ckpt = tf.train.Checkpoint(epoch=tf.Variable(0),
+                               )
+    ckpt_manager = tf.train.CheckpointManager(ckpt,
+                                              FLAGS.ckpt_path,
+                                              max_to_keep=5)
+    # If a checkpoint exists, restore the latest checkpoint.
+    if ckpt_manager.latest_checkpoint:
+        ckpt.restore(ckpt_manager.latest_checkpoint)
+        print("Latest checkpoint is restored!")
 
     gen, disc = model.build_model(FLAGS.c_dim)
-
+    """
 
 
 if __name__ == "__main__":

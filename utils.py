@@ -47,11 +47,26 @@ def resize(img, size=128):
 
 
 @tf.function
-def preprocess(img, center_crop_size=178, resize=128):
+def preprocess_for_training(img, label_org, center_crop_size=178, resize=128):
+    # for images
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, resize)
     img = normalize(img)
+
+    # for labels
+    label_trg = tf.random.shuffle(label_org)
+
+    return img, label_org, label_trg
+
+
+def preprocess_for_testing(img, center_crop_size=178, resize=128):
+    # for images
+    img = random_horizontal_flip(img)
+    img = center_crop(img, center_crop_size)
+    img = resize(img, resize)
+    img = normalize(img)
+
     return img
 
 
@@ -62,7 +77,7 @@ def get_gradient_penalty(x, x_gen, discriminator):
     https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
     """
     # shape=[x.shape[0], 1, 1, 1] to generate a random number for every sample
-    epsilon = tf.random_uniform(shape=[x.shape[0], 1, 1, 1], 0.0, 1.0)
+    epsilon = tf.random_uniform([x.shape[0], 1, 1, 1], 0.0, 1.0)
     x_hat = epsilon * x + (1 - epsilon) * x_gen
     with tf.GradientTape() as tape:
         # to get a gradient w.r.t x_hat, we need to record the value on the tape
@@ -73,3 +88,9 @@ def get_gradient_penalty(x, x_gen, discriminator):
     l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
     gp = tf.reduce_mean((l2_norm - 1.0) ** 2)
     return gp
+
+
+def get_classification_loss(loss_func, logits, target):
+    # Compute binary or softmax cross entropy loss.
+    bce_with_logits = loss_func(target, logits)
+    return bce_with_logits
