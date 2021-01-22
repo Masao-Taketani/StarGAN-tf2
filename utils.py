@@ -4,12 +4,8 @@ import tensorflow as tf
 IMG_SIZE = 256
 
 
-def count_data_size(dataset):
-    ct = 0
-    for _ in dataset.as_numpy_iterator():
-        ct += 1
-
-    return ct
+def count_data_size(data):
+    return len(data)
 
 
 def random_crop(img):
@@ -41,26 +37,35 @@ def random_horizontal_flip(img):
 
 def resize(img, size=128):
     img = tf.image.resize(img, 
-                          [size, size], 
+                          [size, size],
                           method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     return img
 
 
-@tf.function
-def preprocess_for_training(img, label_org, center_crop_size=178, resize=128):
-    # for images
+def preprocess_for_training(img_path, label_org):
+    center_crop_size=178
+    size=128
+
+    ## for images
+    # from image path to string
+    img = tf.io.read_file(img_path)
+    # from jpg-encoded image to a uint8
+    img = tf.io.decode_jpeg(img)
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
-    img = resize(img, resize)
+    img = resize(img, size)
     img = normalize(img)
 
-    # for labels
+    ## for labels
     label_trg = tf.random.shuffle(label_org)
 
     return img, label_org, label_trg
 
 
-def preprocess_for_testing(img, center_crop_size=178, resize=128):
+def preprocess_for_testing(img):
+    center_crop_size=178
+    size=128
+
     # for images
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)

@@ -25,12 +25,19 @@ def main(argv):
 
     train_imgs, train_lbls, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
                                                             FLAGS.selected_attrs)
+    train_buffer_size = count_data_size(train_imgs)
     # Prepare the dataset for training and testing
     train_dataset = tf.data.Dataset.from_tensor_slices((train_imgs, train_lbls))
-    train_dataset = tf.data.Dataset.map(preprocess_for_training,
-                                        num_parallel_calls=AUTOTUNE).cache().shuffle()
-    for img, lbl_org, lbl_trg in train_dataset.take(5):
-        print(img, label_org, label_trg)
+    train_dataset = train_dataset.map(
+                        preprocess_for_training,
+                        num_parallel_calls=AUTOTUNE).shuffle(train_buffer_size)\
+                                                    .repeat()\
+                                                    .batch(FLAGS.batch_size)\
+                                                    .prefetch(buffer_size=AUTOTUNE)
+    for img, lbl_org, lbl_trg in train_dataset.take(15):
+        print(lbl_org, lbl_trg)
+    #for img, lbl_org in train_dataset.take(5):
+    #    print(img, lbl_org)
 
     """
     # Get fixed inputs for debugging.
