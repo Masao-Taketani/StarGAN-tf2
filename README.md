@@ -14,6 +14,8 @@ for Multi-Domain Image-to-Image Translation](https://arxiv.org/abs/1711.09020)<b
 - Repos
   - https://github.com/yunjey/stargan<br>
   - https://github.com/timsainb/tensorflow2-generative-models<br>
+  - https://github.com/tensorflow/models/tree/master/research/deeplab<br>
 
-- blogs
-  - https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
+- webpages
+  - [TFRecord and tf.train.Example](https://www.tensorflow.org/tutorials/load_data/tfrecord)
+  - [今さら聞けないGAN (5) WGAN-gpの実装](https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07)

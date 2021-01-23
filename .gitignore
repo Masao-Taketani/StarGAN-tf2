@@ -3,3 +3,4 @@ __pycache__/
 core.*
 data/
 .cache.*
+test*

@@ -42,15 +42,20 @@ def resize(img, size=128):
     return img
 
 
+def read_and_decode_img(img_path):
+    # from image path to string
+    img_string = tf.io.read_file(img_path)
+    # from jpg-encoded image to a uint8
+    img = tf.io.decode_jpeg(img_string)
+    return img
+
+
 def preprocess_for_training(img_path, label_org):
     center_crop_size=178
     size=128
 
     ## for images
-    # from image path to string
-    img = tf.io.read_file(img_path)
-    # from jpg-encoded image to a uint8
-    img = tf.io.decode_jpeg(img)
+    img, _ = read_and_decode_img(img_path)
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, size)

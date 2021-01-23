@@ -1,7 +1,13 @@
-import tensorflow as tf
 import random
 import os
+import sys
+import math
+
 import numpy as np
+from tqdm import tqdm
+import tensorflow as tf
+
+from utils import read_and_decode_img
 
 
 IMG_DIR = "data/celeba/images/"
@@ -82,6 +88,115 @@ def create_labels(c_org, c_dim=5, selected_attrs=None):
     return c_trg_list
 
 
+## For TFRecords
+# The following functions can be used to convert a value to a type compatible
+# with tf.train.Example.
+
+def _bytes_feature(value):
+  """Returns a bytes_list from a string / byte."""
+  if isinstance(value, type(tf.constant(0))):
+    value = value.numpy() # BytesList won't unpack a string from an EagerTensor.
+  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+def _float_feature(value):
+  """Returns a float_list from a float / double."""
+  return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+
+def _int64_feature(value):
+  """Returns an int64_list from a bool / enum / int / uint."""
+  return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+
+def _int64_feature_list(list_val):
+    features = [tf.train.Feature(
+        int64_list=tf.train.Int64List(value=[val])) for val in list_val]
+    return tf.train.FeatureList(feature=features)
+
+
+def convert_data_to_tfrecord(imgs, labels, num_split, out_dir):
+    """Convert and split the data into some TFRecord files
+    Referred to https://bit.ly/3pfPYv5
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    sys.stdout.write("Start converting data into TFRecords.\n")
+    num_data = len(imgs)
+    num_per_shard = math.ceil(num_data / num_split)
+
+    for shard_id in tqdm(range(num_split)):
+        out_fname = os.path.join(out_dir, 
+                                 "celeb_a-{:02d}-of-{:02d}.tfrecord".format(shard_id,
+                                                                        num_split))
+        
+        with tf.io.TFRecordWriter(out_fname) as writer:
+            start_idx = shard_id * num_per_shard
+            end_idx = min((shard_id + 1) * num_per_shard, num_data)
+            for i in range(start_idx, end_idx):
+                example = image_label_example(imgs[i], labels[i])
+                writer.write(example.SerializeToString())
+
+    sys.stdout.write("Finished converting data into TFRecords.")
+
+
+def image_label_example(img_path, label):
+    img_string = open(img_path, 'rb').read()
+    height, width, channel = tf.image.decode_jpeg(img_string).shape
+    black_h, blond_h, brown_h, male, young = label
+
+    feature = {
+        "image": _bytes_feature(img_string),
+        "height": _int64_feature(height),
+        "width": _int64_feature(width),
+        "channel": _int64_feature(channel),
+    }
+    """
+    "black_h": _int64_feature(black_h),
+    "blond_h": _int64_feature(blond_h),
+    "brown_h": _int64_feature(brown_h),
+    "male": _int64_feature(male),
+    "young": _int64_feature(young),
+    """
+
+    feature_list = {
+        "label": _int64_feature_list(label),
+    }
+
+    return tf.train.SequenceExample(context=tf.train.Features(feature=feature),
+                                    feature_lists=tf.train.FeatureLists(
+                                                    feature_list=feature_list))
+
+
+def parse_tfrecords(example_proto):
+    # Parse the input tf.train.Example proto using the dictionaries below
+    feature_desc = {
+        "image": tf.io.FixedLenFeature([], tf.string),
+        "height": tf.io.FixedLenFeature([], tf.int64),
+        "width": tf.io.FixedLenFeature([], tf.int64),
+        "channel": tf.io.FixedLenFeature([], tf.int64),
+    }
+    """
+    "black_h": tf.io.FixedLenFeature([], tf.int64),
+    "blond_h": tf.io.FixedLenFeature([], tf.int64),
+    "brown_h": tf.io.FixedLenFeature([], tf.int64),
+    "male": tf.io.FixedLenFeature([], tf.int64),
+    "young": tf.io.FixedLenFeature([], tf.int64),
+    """
+
+    feature_list_desc = {
+        "label": tf.io.FixedLenSequenceFeature([], dtype=tf.int64)
+    }
+
+    inp, trg = tf.io.parse_single_sequence_example(example_proto, 
+                                                   context_features=feature_desc,
+                                                   sequence_features=feature_list_desc)
+
+    img = tf.io.decode_jpeg(inp["image"])
+    label = trg["label"]
+
+    return img, label
+
+
 if __name__ == "__main__":
     attr_path = "data/celeba/list_attr_celeba.txt"
     selected_attrs = ['Black_Hair', 'Blond_Hair', 'Brown_Hair', 'Male', 'Young']
@@ -91,11 +206,22 @@ if __name__ == "__main__":
     for img, lbl in dataset.take(5):
         print(img, lbl)
 
-    print("shape of train_lbls:", len(train_lbls), len(train_lbls[0]))
+    print("\nshape of train_lbls:", len(train_lbls), len(train_lbls[0]))
 
     orgs_to_test = train_lbls[:5]
-    print("original test labels\n", orgs_to_test)
+    print("\noriginal test labels\n", orgs_to_test)
     trgs_to_test = create_labels(orgs_to_test, 5, selected_attrs)
-    print("target test labels\n", trgs_to_test)
+    print("\ntarget test labels\n", trgs_to_test)
 
-    print("Finished testing the CelebA dataset!")
+    print("\ntf record write test")
+    convert_data_to_tfrecord(test_imgs, test_lbls, 2, "test")
+
+    print("\ntf record read test")
+    #tfr_dataset = tf.data.Dataset.list_files("test/*")
+    tfr_dataset = tf.data.TFRecordDataset("test/celeb_a-00-of-02.tfrecord")
+    tfr_dataset = tfr_dataset.map(parse_tfrecords)
+    print(tfr_dataset)
+    for img, label in tfr_dataset.take(5):
+        print("img.shape", img.shape, "label", label)
+
+    print("\nFinished testing the CelebA dataset!")
