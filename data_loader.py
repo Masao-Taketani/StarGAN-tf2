@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 
-from utils import read_and_decode_img
+from utils import *
 
 
 IMG_DIR = "data/celeba/images/"
@@ -198,30 +198,49 @@ def parse_tfrecords(example_proto):
 
 
 if __name__ == "__main__":
+    AUTOTUNE = tf.data.AUTOTUNE
+
     attr_path = "data/celeba/list_attr_celeba.txt"
     selected_attrs = ['Black_Hair', 'Blond_Hair', 'Brown_Hair', 'Male', 'Young']
+    tfrecords_dir =  "data/celeba/tfrecords/"
 
     train_imgs, train_lbls, test_imgs, test_lbls = get_data(attr_path, selected_attrs)
     dataset = tf.data.Dataset.from_tensor_slices((train_imgs, train_lbls))
     for img, lbl in dataset.take(5):
         print(img, lbl)
 
-    print("\nshape of train_lbls:", len(train_lbls), len(train_lbls[0]))
+    print("\nShape of train_lbls:", len(train_lbls), len(train_lbls[0]))
 
     orgs_to_test = train_lbls[:5]
-    print("\noriginal test labels\n", orgs_to_test)
+    print("\nOriginal test labels\n", orgs_to_test)
     trgs_to_test = create_labels(orgs_to_test, 5, selected_attrs)
-    print("\ntarget test labels\n", trgs_to_test)
+    print("\nTarget test labels\n", trgs_to_test)
 
-    print("\ntf record write test")
-    convert_data_to_tfrecord(test_imgs, test_lbls, 2, "test")
+    print("\nTFRecord write test")
+    print("\nFor training data")
+    train_dir = os.path.join(tfrecords_dir, "train")
+    #convert_data_to_tfrecord(train_imgs, train_lbls, 10, train_dir)
+    print("\nFor testing data")
+    test_dir = os.path.join(tfrecords_dir, "test")
+    #convert_data_to_tfrecord(test_imgs, test_lbls, 1, test_dir)
 
-    print("\ntf record read test")
-    #tfr_dataset = tf.data.Dataset.list_files("test/*")
-    tfr_dataset = tf.data.TFRecordDataset("test/celeb_a-00-of-02.tfrecord")
+    print("\nTFRecord read test")
+    tfr_dataset = tf.data.Dataset.list_files(os.path.join(train_dir, "*.tfrecord"))
+    tfr_dataset = tfr_dataset.interleave(tf.data.TFRecordDataset,
+                                         num_parallel_calls=AUTOTUNE,
+                                         deterministic=False)
     tfr_dataset = tfr_dataset.map(parse_tfrecords)
-    print(tfr_dataset)
-    for img, label in tfr_dataset.take(5):
-        print("img.shape", img.shape, "label", label)
+    tfr_dataset = tfr_dataset.map(preprocess_for_training,
+                                  num_parallel_calls=AUTOTUNE)
+    tfr_dataset = tfr_dataset.batch(batch_size=16)
+    tfr_dataset = tfr_dataset.prefetch(buffer_size=AUTOTUNE)
+
+    for img, label_org, label_trg in tfr_dataset.take(1):
+        print("img.shape", img.shape)
+        print("img\n", img[0])
+        print("label_org.shape", label_org.shape)
+        print("label_org", label_org[0])
+        print("label_trg.shape", label_trg.shape)
+        print("label_trg", label_trg[0])
 
     print("\nFinished testing the CelebA dataset!")

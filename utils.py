@@ -50,12 +50,12 @@ def read_and_decode_img(img_path):
     return img
 
 
-def preprocess_for_training(img_path, label_org):
+def preprocess_for_training(img, label_org):
     center_crop_size=178
     size=128
 
     ## for images
-    img, _ = read_and_decode_img(img_path)
+    #img = read_and_decode_img(img_path)
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, size)
