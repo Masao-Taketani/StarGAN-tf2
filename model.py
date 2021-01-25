@@ -5,7 +5,9 @@ from tensorflow.keras.layers import Layer, Conv2D, BatchNormalization, LeakyReLU
 from tensorflow.keras.activations import tanh
 
 
+# For testing
 INPUT_SHAPE = (128, 128, 3)
+C_DIM = 5
 
 def get_norm_layer(norm_type):
     if norm_type.lower() == "batchnorm":
@@ -364,8 +366,12 @@ class Generator(Model):
                                   activation="tanh",
                                   name="g_last_conv2d")
 
-    def call(self, inputs):
-        x = tf.pad(inputs, [[0, 0], [3, 3], [3, 3], [0, 0]], "CONSTANT")
+    def call(self, x, c):
+        # Convert the shape of 'c': (bs, c_dim) -> (bs, 1, 1, c_dim)
+        c = tf.cast(tf.reshape(c, [-1, 1, 1, c.shape[-1]]), tf.float32)
+        c = tf.tile(c, [1, x.shape[1], x.shape[2], 1])
+        x = tf.concat([x, c], axis=-1)
+        x = tf.pad(x, [[0, 0], [3, 3], [3, 3], [0, 0]], "CONSTANT")
         x = self.downsample_1(x)
         x = self.downsample_2(x)
         x = self.downsample_3(x)
@@ -383,8 +389,10 @@ class Generator(Model):
         return result
 
     def summary(self):
+        c_dim = C_DIM
         x = Input(shape=INPUT_SHAPE)
-        model = Model(inputs=[x], outputs=self.call(x))
+        c = Input(shape=(c_dim,))
+        model = Model(inputs=[x, c], outputs=self.call(x, c))
         return model.summary()
 
 
@@ -403,4 +411,5 @@ def build_model(c_dim):
 
 
 if __name__ == "__main__":
+    # Test the shapes of the models
     gen, disc = build_model(5)

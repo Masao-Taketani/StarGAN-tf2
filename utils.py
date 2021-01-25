@@ -54,14 +54,14 @@ def preprocess_for_training(img, label_org):
     center_crop_size=178
     size=128
 
-    ## for images
+    ## For images
     #img = read_and_decode_img(img_path)
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, size)
     img = normalize(img)
 
-    ## for labels
+    ## Generate target domain labels randomly
     label_trg = tf.random.shuffle(label_org)
 
     return img, label_org, label_trg
@@ -71,7 +71,7 @@ def preprocess_for_testing(img):
     center_crop_size=178
     size=128
 
-    # for images
+    # For images
     img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, resize)
@@ -102,5 +102,17 @@ def get_gradient_penalty(x, x_gen, discriminator):
 
 def get_classification_loss(loss_func, logits, target):
     # Compute binary or softmax cross entropy loss.
-    bce_with_logits = loss_func(target, logits)
-    return bce_with_logits
+    loss_total = loss_func(target, logits)
+    loss = tf.keras.metrics.Mean(loss_total)
+    return loss
+
+
+def 
+
+
+@tf.function
+def train_step(gen, disc, real_x, label_org, label_trg):
+    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+        real_out_src, real_out_cls = disc(real_x, training=True)
+        x_fake = gen(x_real, label_trg, training=)
+        fake_out_src, fake_out_cls = disc(x_fake, training=)
