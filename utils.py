@@ -92,27 +92,79 @@ def get_gradient_penalty(x, x_gen, discriminator):
     with tf.GradientTape() as tape:
         # to get a gradient w.r.t x_hat, we need to record the value on the tape
         t.watch(x_hat)
-        d_hat = discriminator(x_hat)
+        d_hat = discriminator(x_hat, training=True)
     
     gradients = tape.gradient(d_hat, x_hat)
     l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
-    gp = tf.reduce_mean((l2_norm - 1.0) ** 2)
-    return gp
+    gp_loss = tf.reduce_mean((l2_norm - 1.0) ** 2)
+    return gp_loss
 
 
-def get_classification_loss(loss_func, logits, target):
+def get_classification_loss(target, logits):
     # Compute binary or softmax cross entropy loss.
-    loss_total = loss_func(target, logits)
+    loss_total = tf.keras.losses.BinaryCrossentropy(from_logits=True)(target, 
+                                                                      logits)
     loss = tf.keras.metrics.Mean(loss_total)
     return loss
 
 
-def 
+def get_mean_for_loss(vals):
+    return tf.keras.metrics.Mean(vals)
+
+
+def get_l1_loss(x_real, x_rec):
+    return tf.reduce_mean(tf.abs(x_real - x_rec))
 
 
 @tf.function
-def train_step(gen, disc, real_x, label_org, label_trg):
-    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-        real_out_src, real_out_cls = disc(real_x, training=True)
-        x_fake = gen(x_real, label_trg, training=)
-        fake_out_src, fake_out_cls = disc(x_fake, training=)
+def train_step(step, 
+               gen, 
+               disc, 
+               x_real, 
+               label_org, 
+               label_trg, 
+               lambda_cls, 
+               lambda_gp, 
+               lambda_rec, 
+               num_critic_updates, 
+               disc_opt, 
+               gen_opt):
+               
+    g_loss = None
+
+    with tf.GradientTape() as disc_tape, tf.GradientTape() as gen_tape:
+        # For the discriminator
+        #Compute loss with real images
+        real_out_src, real_out_cls = disc(x_real, training=True)
+        d_loss_real = get_mean_for_loss(real_out_src)
+        d_loss_cls = get_classification_loss(label_org, real_out_cls)
+        # Compute loss with fake images
+        x_fake = gen(x_real, label_trg, training=False)
+        fake_out_src, fake_out_cls = disc(x_fake, training=True)
+        d_loss_fake = get_mean_for_loss(fake_out_src)
+        # Compute loss for gradient penalty
+        d_loss_gp = get_gradient_penalty(x_real, x_fake, disc)
+        # Compute the total loss for the discriminator
+        d_loss = - d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
+
+        # For the generator
+        if step % num_critic_updates == 0:
+            # Compute loss for original-to-target domain
+            x_fake = gen(x_real, label_trg)
+            gen_out_src, gen_out_cls = disc(x_fake)
+            g_loss_fake = get_mean_for_loss(gen_out_src)
+            g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
+            # Compute loss for target-to-original domain
+            x_rec = gen(x_fake, label_trg)
+            g_loss_rec = get_l1_loss(x_real, x_rec)
+            # Compute the total loss for the generator
+            g_loss = - g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
+
+    # Calculate the gradients and update params for the discriminator and the generator
+    disc_gradients = disc_tape.gradient(d_loss, disc.trainable_variables)
+    disc_opt.apply_gradients(zip(disc_gradients, disc.trainable_variables))
+    if g_loss:
+        gen_gradients = gen_tape.gradient(g_loss, gen_trainable_variables)
+        gen_opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
+
+    return d_loss, g_loss

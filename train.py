@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 
 from absl import app
 from absl import flags
@@ -22,17 +23,25 @@ flags.DEFINE_integer("c_dim", 5, "dimension of domain labels")
 flags.DEFINE_integer("batch_size", 16, "mini-batch size")
 flags.DEFINE_string("ckpt_dir", "ckpts/train/", "path to the checkpoint dir")
 flags.DEFINE_string("tfrecord_dir", "data/celeba/tfrecords/", "path to the tfrecord dir")
+flags.DEFINE_string("log_dir", "logs/", "path to the log dir")
 flags.DEFINE_integer("num_epochs", 200, "number of epopchs to train")
 flags.DEFINE_integer("num_epochs_decay", 100, "number of epochs to start lr decay")
 flags.DEFINE_float("lambda_cls", 1.0, "weight for domain classification loss")
 flags.DEFINE_float("lambda_rec", 10.0, "weight for reconstruction loss")
 flags.DEFINE_float("lambda_gp", 10.0, "weight for gradient penalty loss")
-flags_DEFINE_string("model_save_dir", "", "path to the model dir to save")
-flags_DEFINE_integer("model_save_epoch", "10", "to save model every specified epochs")
+flags.DEFINE_integer("model_save_epoch", "10", "to save model every specified epochs")
+flags.DEFINE_integer("num_critic_updates", 5, "number of a Discriminator updates "
+                                              "every time a generator updates")
+flags.DEFINE_float("g_lr", 0.0001, "learning rate for the generator")
+flags.DEFINE_float("d_lr", 0.0001, "learning rate for the discriminator")
+flags.DEFINE_float("beta1", 0.5, "beta1 for Adam optimizer")
+flags.DEFNIE_float("beta2", 0.999, "beta2 for Adam optimizer")
 
 
 def main(argv):
     AUTOTUNE = tf.data.experimental.AUTOTUNE
+    os.makedirs(FLAGS.ckpt_dir, exist_ok=True)
+    os.makedirs(FLAGS.log_dir, exist_ok=True)
 
     train_imgs, train_lbls, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
                                                             FLAGS.selected_attrs)
@@ -59,12 +68,17 @@ def main(argv):
     # Build the generator and discriminator
     gen, disc = model.build_model(FLAGS.c_dim)
 
-    # Define losses
-    classification_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    # Define the optimizers for the generator and the discriminator
+    gen_opt = tf.keras.optimizers.Adam(FLAGS.g_lr, FLAGS.beta1, FLAGS.beta2)
+    disc_opt = tf.keras.optimizers.Adam(FLAGS.d_lr, FLAGS.beta1, FLAGS.beta2)
 
     # Set the checkpoint and the checkpoint manager.
     ckpt = tf.train.Checkpoint(epoch=tf.Variable(0),
-                               )
+                               gen=gen,
+                               disc=disc,
+                               gen_opt=gen_opt,
+                               disc_opt=disc_opt)
+
     ckpt_manager = tf.train.CheckpointManager(ckpt,
                                               FLAGS.ckpt_dir,
                                               max_to_keep=5)
@@ -72,6 +86,12 @@ def main(argv):
     if ckpt_manager.latest_checkpoint:
         ckpt.restore(ckpt_manager.latest_checkpoint)
         print("Latest checkpoint is restored!")
+        
+    # Create a summary writer to track the losses 
+    summary_writer = tf.summary.create_file_writer(
+                                    os.path.join(FLAGS.log_dir,
+                                    datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+                                )
 
     # Train the discriminator and the generator
     while ckpt.epoch < FLAGS.num_epochs:
@@ -85,7 +105,19 @@ def main(argv):
 
         for real_x, label_org, label_trg in train_dataset:
             step += 1
-            train_step(gen, disc, real_x, label_org, label_trg)
+            d_loss, g_loss = train_step(step, 
+                                        gen, 
+                                        disc, 
+                                        x_real, 
+                                        label_org, 
+                                        label_trg, 
+                                        FLAGS.lambda_cls, 
+                                        FLAGS.lambda_gp, 
+                                        FLAGS.lambda_rec, 
+                                        FLAGS.num_critic_updates, 
+                                        disc_opt, 
+                                        gen_opt)
+
             if step % 1000 == 0:
                 print(".", end="")
 

@@ -4,3 +4,5 @@ core.*
 data/
 .cache.*
 test*
+ckpts/
+logs/
