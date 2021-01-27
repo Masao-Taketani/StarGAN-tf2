@@ -99,30 +99,49 @@ def main(argv):
         step = 0
 
         if ckpt.epoch > FLAGS.num_epochs_decay:
-            decayed_lr = get_decay_factor(ckpt.epoch)
+            update_lr(gen_opt, disc_opt, FLAGS.num_epochs, ckpt.epoch)
 
         start = time.time()
 
         for real_x, label_org, label_trg in train_dataset:
             step += 1
-            d_loss, g_loss = train_step(step, 
-                                        gen, 
-                                        disc, 
-                                        x_real, 
-                                        label_org, 
-                                        label_trg, 
-                                        FLAGS.lambda_cls, 
-                                        FLAGS.lambda_gp, 
-                                        FLAGS.lambda_rec, 
-                                        FLAGS.num_critic_updates, 
-                                        disc_opt, 
-                                        gen_opt)
+            losses = train_step(step, 
+                                gen, 
+                                disc, 
+                                x_real, 
+                                label_org, 
+                                label_trg, 
+                                FLAGS.lambda_cls, 
+                                FLAGS.lambda_gp, 
+                                FLAGS.lambda_rec, 
+                                FLAGS.num_critic_updates, 
+                                disc_opt, 
+                                gen_opt)
 
-            if step % 1000 == 0:
+        if step % 1000 == 0:
                 print(".", end="")
 
     print("\nTime taken for epoch {} is {} sec\n".format(ckpt.epoch.numpy(), 
-                                                        time.time()-start))
+                                                            time.time()-start))
+    print("d_loss_real: {}, d_loss_fake: {}, d_loss_cls: {}, d_loss_gp: {}, " +\
+          "d_loss: {}, g_loss_fake: {}, g_loss_cls: {}, g_loss: {}".format(losses[0],
+                                                                           losses[1],
+                                                                           losses[2],
+                                                                           losses[3],
+                                                                           losses[4],
+                                                                           losses[5],
+                                                                           losses[6],
+                                                                           losses[7]))
+    # keep the log for the losses
+    with summary_writer.as_default():
+        tf.summary.scalar("d_loss_real", losses[0], step=ckpt.epoch)
+        tf.summary.scalar("d_loss_fake", losses[1], step=ckpt.epoch)
+        tf.summary.scalar("d_loss_cls", losses[2], step=ckpt.epoch)
+        tf.summary.scalar("d_loss_gp", losses[3], step=ckpt.epoch)
+        tf.summary.scalar("d_loss", losses[4], step=ckpt.epoch)
+        tf.summary.scalar("g_loss_fake", losses[5], step=ckpt.epoch)
+        tf.summary.scalar("g_loss_cls", losses[6], step=ckpt.epoch)
+        tf.summary.scalar("g_loss", losses[7], step=ckpt.epoch)    
 
 
 if __name__ == "__main__":

@@ -117,6 +117,32 @@ def get_l1_loss(x_real, x_rec):
 
 
 @tf.function
+def get_lr_decay_factor(epoch, max_epoch, init_lr=0.0001):
+    return tf.cast(2.0 * init_lr * (- tf.cast(epoch, tf.float32) / tf.cast(max_epoch, tf.float32) + 1.0), dtype=tf.float32)
+
+
+@tf.function
+def update_lr(gen_opt, disc_opt, max_epoch, epoch, g_lr=0.0001, d_lr=0.0001):
+    if g_lr != d_lr:
+        decayed_lr = get_lr_decay_factor(epoch, max_epoch, g_lr)
+        gen_opt.lr.assign(decayed_lr)
+        disc_opt.lr.assign(decayed_lr)
+        # to debug
+        print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
+    else:
+        g_decayed_lr =  get_lr_decay_factor(epoch, 
+                                            max_epoch,
+                                            g_lr)
+        d_decayed_lr =  get_lr_decay_factor(epoch, 
+                                            max_epoch,
+                                            d_lr)
+        gen_opt.lr.assign(g_decayed_lr)
+        disc_opt.lr.assign(d_decayed_lr)
+        # to debug
+        print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
+
+
+@tf.function
 def train_step(step, 
                gen, 
                disc, 
@@ -129,14 +155,14 @@ def train_step(step,
                num_critic_updates, 
                disc_opt, 
                gen_opt):
-               
+
     g_loss = None
 
     with tf.GradientTape() as disc_tape, tf.GradientTape() as gen_tape:
         # For the discriminator
         #Compute loss with real images
         real_out_src, real_out_cls = disc(x_real, training=True)
-        d_loss_real = get_mean_for_loss(real_out_src)
+        d_loss_real = - get_mean_for_loss(real_out_src)
         d_loss_cls = get_classification_loss(label_org, real_out_cls)
         # Compute loss with fake images
         x_fake = gen(x_real, label_trg, training=False)
@@ -145,20 +171,20 @@ def train_step(step,
         # Compute loss for gradient penalty
         d_loss_gp = get_gradient_penalty(x_real, x_fake, disc)
         # Compute the total loss for the discriminator
-        d_loss = - d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
+        d_loss = d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
 
         # For the generator
         if step % num_critic_updates == 0:
             # Compute loss for original-to-target domain
             x_fake = gen(x_real, label_trg)
             gen_out_src, gen_out_cls = disc(x_fake)
-            g_loss_fake = get_mean_for_loss(gen_out_src)
+            g_loss_fake = - get_mean_for_loss(gen_out_src)
             g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
             # Compute loss for target-to-original domain
             x_rec = gen(x_fake, label_trg)
             g_loss_rec = get_l1_loss(x_real, x_rec)
             # Compute the total loss for the generator
-            g_loss = - g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
+            g_loss = g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
 
     # Calculate the gradients and update params for the discriminator and the generator
     disc_gradients = disc_tape.gradient(d_loss, disc.trainable_variables)
@@ -167,4 +193,4 @@ def train_step(step,
         gen_gradients = gen_tape.gradient(g_loss, gen_trainable_variables)
         gen_opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
 
-    return d_loss, g_loss
+    return d_loss_real, d_loss_fake, d_loss_cls, d_loss_gp, d_loss, g_loss_fake, g_loss_cls, g_loss
