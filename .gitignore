@@ -6,3 +6,4 @@ data/
 test*
 ckpts/
 logs/
+test_results/

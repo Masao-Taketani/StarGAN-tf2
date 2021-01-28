@@ -26,7 +26,7 @@ def normalize(img):
 
 def denormalize(img):
     # convert img vals from [-1, 1] to [0, 1]
-    return img / 2 + 0.5
+    return img / 2.0 + 0.5
 
 
 def random_horizontal_flip(img):
@@ -50,34 +50,22 @@ def read_and_decode_img(img_path):
     return img
 
 
-def preprocess_for_training(img, label_org):
-    center_crop_size=178
-    size=128
-
-    ## For images
-    #img = read_and_decode_img(img_path)
-    img = random_horizontal_flip(img)
+def preprocess_img(img, center_crop_size=178, size=128, use_aug=True):
+    if use_aug:
+        img = random_horizontal_flip(img)
     img = center_crop(img, center_crop_size)
     img = resize(img, size)
     img = normalize(img)
+    return img
 
-    ## Generate target domain labels randomly
+
+def preprocess_for_training(img, label_org):
+    # For image preprocessing
+    img = preprocess_img(img)
+    # Generate target domain labels randomly
     label_trg = tf.random.shuffle(label_org)
 
     return img, label_org, label_trg
-
-
-def preprocess_for_testing(img):
-    center_crop_size=178
-    size=128
-
-    # For images
-    img = random_horizontal_flip(img)
-    img = center_crop(img, center_crop_size)
-    img = resize(img, resize)
-    img = normalize(img)
-
-    return img
 
 
 def get_gradient_penalty(x, x_gen, discriminator):
@@ -87,11 +75,11 @@ def get_gradient_penalty(x, x_gen, discriminator):
     https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
     """
     # shape=[x.shape[0], 1, 1, 1] to generate a random number for every sample
-    epsilon = tf.random_uniform([x.shape[0], 1, 1, 1], 0.0, 1.0)
+    epsilon = tf.random.uniform([x.shape[0], 1, 1, 1], 0.0, 1.0)
     x_hat = epsilon * x + (1 - epsilon) * x_gen
     with tf.GradientTape() as tape:
         # to get a gradient w.r.t x_hat, we need to record the value on the tape
-        t.watch(x_hat)
+        tape.watch(x_hat)
         d_hat = discriminator(x_hat, training=True)
     
     gradients = tape.gradient(d_hat, x_hat)
@@ -101,15 +89,16 @@ def get_gradient_penalty(x, x_gen, discriminator):
 
 
 def get_classification_loss(target, logits):
+    logits = tf.squeeze(logits)
     # Compute binary or softmax cross entropy loss.
     loss_total = tf.keras.losses.BinaryCrossentropy(from_logits=True)(target, 
                                                                       logits)
-    loss = tf.keras.metrics.Mean(loss_total)
+    loss = tf.reduce_mean(loss_total)
     return loss
 
 
-def get_mean_for_loss(vals):
-    return tf.keras.metrics.Mean(vals)
+def get_mean_for_loss(out_src):
+    return tf.reduce_mean(out_src)
 
 
 def get_l1_loss(x_real, x_rec):
@@ -156,6 +145,8 @@ def train_step(step,
                disc_opt, 
                gen_opt):
 
+    g_loss_fake = None
+    g_loss_cls = None
     g_loss = None
 
     with tf.GradientTape() as disc_tape, tf.GradientTape() as gen_tape:
@@ -189,8 +180,54 @@ def train_step(step,
     # Calculate the gradients and update params for the discriminator and the generator
     disc_gradients = disc_tape.gradient(d_loss, disc.trainable_variables)
     disc_opt.apply_gradients(zip(disc_gradients, disc.trainable_variables))
-    if g_loss:
-        gen_gradients = gen_tape.gradient(g_loss, gen_trainable_variables)
+    if g_loss is not None:
+        gen_gradients = gen_tape.gradient(g_loss, gen.trainable_variables)
         gen_opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
 
     return d_loss_real, d_loss_fake, d_loss_cls, d_loss_gp, d_loss, g_loss_fake, g_loss_cls, g_loss
+
+
+    @tf.function
+    def print_log(epoch, start, end, losses):
+        print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
+                                                             end-start))
+        print("d_loss_real: {}, d_loss_fake: {}, d_loss_cls: {}, d_loss_gp: {}, " +\
+            "d_loss: {}, g_loss_fake: {}, g_loss_cls: {}, g_loss: {}".format(losses[0],
+                                                                            losses[1],
+                                                                            losses[2],
+                                                                            losses[3],
+                                                                            losses[4],
+                                                                            losses[5],
+                                                                            losses[6],
+                                                                            losses[7]))
+
+    def preprocess_for_testing(img, c_trg):
+        x = tf.expand_dims(img, axis=0)
+        c = tf.expand_dims(c_trg, axis=0)
+        x = tf.convert_to_tensor(x)
+        c = tf.convert_to_tensor(c)
+
+        return x, c
+
+
+    def save_img(tensor, fpath):
+        h, w, c = tensor.shape
+        tensor = denormalize(tensor)
+        tensor = tf.cast(tensor, dtype=tf.uint8) * 255
+        tensor = tf.reshape(tensor, [h//2, w//2, c])
+        bstr = tf.io.encode_jpeg(tensor)
+        with open(fpath, "wb") as f:
+            f.write(bstr)
+
+
+    @tf.function
+    def save_test_results(model, img_list, trg_list, fpath):
+        results = []
+        for img, c_trg in zip(img_list, trg_list):
+            img = preprocess_img(img, use_aug=False)
+            x, c = preprocess_for_testing(img, c_trg)
+            result = model(x, c)
+            result = tf.squeeze(result, axis=0)
+            results.append(result)
+        tensor = tf.concat(results, axis=1)
+        save_img(tensor, fpath)

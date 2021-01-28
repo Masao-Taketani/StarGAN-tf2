@@ -9,6 +9,7 @@ import tensorflow as tf
 
 from data_loader import *
 from utils import *
+from model import build_model
 
 
 FLAGS = flags.FLAGS
@@ -23,7 +24,8 @@ flags.DEFINE_integer("c_dim", 5, "dimension of domain labels")
 flags.DEFINE_integer("batch_size", 16, "mini-batch size")
 flags.DEFINE_string("ckpt_dir", "ckpts/train/", "path to the checkpoint dir")
 flags.DEFINE_string("tfrecord_dir", "data/celeba/tfrecords/", "path to the tfrecord dir")
-flags.DEFINE_string("log_dir", "logs/", "path to the log dir")
+flags.DEFINE_string("test_result_dir", "test_results/", "path to the test result dir")
+flags.DEFINE_string("logdir", "logs/", "path to the log dir")
 flags.DEFINE_integer("num_epochs", 200, "number of epopchs to train")
 flags.DEFINE_integer("num_epochs_decay", 100, "number of epochs to start lr decay")
 flags.DEFINE_float("lambda_cls", 1.0, "weight for domain classification loss")
@@ -35,13 +37,18 @@ flags.DEFINE_integer("num_critic_updates", 5, "number of a Discriminator updates
 flags.DEFINE_float("g_lr", 0.0001, "learning rate for the generator")
 flags.DEFINE_float("d_lr", 0.0001, "learning rate for the discriminator")
 flags.DEFINE_float("beta1", 0.5, "beta1 for Adam optimizer")
-flags.DEFNIE_float("beta2", 0.999, "beta2 for Adam optimizer")
+flags.DEFINE_float("beta2", 0.999, "beta2 for Adam optimizer")
 
 
 def main(argv):
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+
     AUTOTUNE = tf.data.experimental.AUTOTUNE
     os.makedirs(FLAGS.ckpt_dir, exist_ok=True)
-    os.makedirs(FLAGS.log_dir, exist_ok=True)
+    os.makedirs(FLAGS.logdir, exist_ok=True)
+    os.makedirs(FLAGS.test_result_dir, exist_ok=True)
 
     train_imgs, train_lbls, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
                                                             FLAGS.selected_attrs)
@@ -60,13 +67,12 @@ def main(argv):
     train_dataset = train_dataset.batch(batch_size=FLAGS.batch_size)
     train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
     # Get fixed inputs for testing and debugging.
-    c_fixed_trg_list = create_labels(test_lbls[:FLAGS.batch_size], 
+    c_fixed_trg_list = create_labels(test_lbls[:10], 
                                      FLAGS.c_dim, 
                                      FLAGS.selected_attrs)
-    c_fixed_trg_list = tf.convert_to_tensor(c_fixed_trg_list)
 
     # Build the generator and discriminator
-    gen, disc = model.build_model(FLAGS.c_dim)
+    gen, disc = build_model(FLAGS.c_dim)
 
     # Define the optimizers for the generator and the discriminator
     gen_opt = tf.keras.optimizers.Adam(FLAGS.g_lr, FLAGS.beta1, FLAGS.beta2)
@@ -89,7 +95,7 @@ def main(argv):
         
     # Create a summary writer to track the losses 
     summary_writer = tf.summary.create_file_writer(
-                                    os.path.join(FLAGS.log_dir,
+                                    os.path.join(FLAGS.logdir,
                                     datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
                                 )
 
@@ -103,7 +109,7 @@ def main(argv):
 
         start = time.time()
 
-        for real_x, label_org, label_trg in train_dataset:
+        for x_real, label_org, label_trg in train_dataset:
             step += 1
             losses = train_step(step, 
                                 gen, 
@@ -121,27 +127,23 @@ def main(argv):
         if step % 1000 == 0:
                 print(".", end="")
 
-    print("\nTime taken for epoch {} is {} sec\n".format(ckpt.epoch.numpy(), 
-                                                            time.time()-start))
-    print("d_loss_real: {}, d_loss_fake: {}, d_loss_cls: {}, d_loss_gp: {}, " +\
-          "d_loss: {}, g_loss_fake: {}, g_loss_cls: {}, g_loss: {}".format(losses[0],
-                                                                           losses[1],
-                                                                           losses[2],
-                                                                           losses[3],
-                                                                           losses[4],
-                                                                           losses[5],
-                                                                           losses[6],
-                                                                           losses[7]))
-    # keep the log for the losses
-    with summary_writer.as_default():
-        tf.summary.scalar("d_loss_real", losses[0], step=ckpt.epoch)
-        tf.summary.scalar("d_loss_fake", losses[1], step=ckpt.epoch)
-        tf.summary.scalar("d_loss_cls", losses[2], step=ckpt.epoch)
-        tf.summary.scalar("d_loss_gp", losses[3], step=ckpt.epoch)
-        tf.summary.scalar("d_loss", losses[4], step=ckpt.epoch)
-        tf.summary.scalar("g_loss_fake", losses[5], step=ckpt.epoch)
-        tf.summary.scalar("g_loss_cls", losses[6], step=ckpt.epoch)
-        tf.summary.scalar("g_loss", losses[7], step=ckpt.epoch)    
+        end = time.time()
+        print_log(ckpt.epoch.numpy(), start, end, losses)
+
+        # keep the log for the losses
+        with summary_writer.as_default():
+            tf.summary.scalar("d_loss_real", losses[0], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_fake", losses[1], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_cls", losses[2], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_gp", losses[3], step=ckpt.epoch)
+            tf.summary.scalar("d_loss", losses[4], step=ckpt.epoch)
+            tf.summary.scalar("g_loss_fake", losses[5], step=ckpt.epoch)
+            tf.summary.scalar("g_loss_cls", losses[6], step=ckpt.epoch)
+            tf.summary.scalar("g_loss", losses[7], step=ckpt.epoch)
+
+        # test the generator model and save the results for each epoch
+        fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch))
+        save_test_results(gen, test_imgs[:10], c_fixed_trg_list, fpath)
 
 
 if __name__ == "__main__":
