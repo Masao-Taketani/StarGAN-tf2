@@ -51,8 +51,8 @@ def main(argv):
     os.makedirs(FLAGS.logdir, exist_ok=True)
     os.makedirs(FLAGS.test_result_dir, exist_ok=True)
 
-    train_imgs, train_lbls, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
-                                                            FLAGS.selected_attrs)
+    _, _, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
+                                          FLAGS.selected_attrs)
 
     # Prepare the dataset for training and testing
     train_dir = os.path.join(FLAGS.tfrecord_dir, "train")
@@ -80,7 +80,7 @@ def main(argv):
     disc_opt = tf.keras.optimizers.Adam(FLAGS.d_lr, FLAGS.beta1, FLAGS.beta2)
 
     # Set the checkpoint and the checkpoint manager.
-    ckpt = tf.train.Checkpoint(epoch=tf.Variable(0),
+    ckpt = tf.train.Checkpoint(epoch=tf.Variable(0, dtype=tf.int64),
                                gen=gen,
                                disc=disc,
                                gen_opt=gen_opt,
@@ -100,10 +100,14 @@ def main(argv):
                                     datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
                                 )
 
+    d_loss_list, g_loss_list = initialize_loss_trackers()
+
     # Train the discriminator and the generator
     while ckpt.epoch < FLAGS.num_epochs:
         ckpt.epoch.assign_add(1)
         step = tf.constant(0)
+        reset_loss_trackers(d_loss_list)
+        reset_loss_trackers(g_loss_list)
 
         if ckpt.epoch > FLAGS.num_epochs_decay:
             update_lr(gen_opt, disc_opt, FLAGS.num_epochs, ckpt.epoch)
@@ -125,7 +129,9 @@ def main(argv):
                                   FLAGS.lambda_cls,
                                   FLAGS.lambda_gp, 
                                   disc_opt)
-                                  
+                                
+            update_loss_trackers(d_loss_list, d_losses)
+
             if step % FLAGS.num_critic_updates == 0:
                 g_losses = train_gen(step, 
                                      gen, 
@@ -137,23 +143,27 @@ def main(argv):
                                      FLAGS.lambda_rec,
                                      gen_opt)
 
+                update_loss_trackers(g_loss_list, g_losses)
+                break
+
             if step % 1000 == 0:
                     print(".", end="")
 
         end = time.time()
         print_log(ckpt.epoch.numpy(), start, end, d_losses, g_losses)
 
+        print("loss", d_loss_list[0].result(), "epoch", ckpt.epoch)
         # keep the log for the losses
         with summary_writer.as_default():
-            tf.summary.scalar("d_loss_real", d_losses[0], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_fake", d_losses[1], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_gp", d_losses[2], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_cls", d_losses[3], step=ckpt.epoch)
-            tf.summary.scalar("d_loss", d_losses[4], step=ckpt.epoch)
-            tf.summary.scalar("g_loss_fake", g_losses[0], step=ckpt.epoch)
-            tf.summary.scalar("g_loss_rec", g_losses[1], step=ckpt.epoch)
-            tf.summary.scalar("g_loss_cls", g_losses[2], step=ckpt.epoch)
-            tf.summary.scalar("g_loss", g_losses[3], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_real", d_loss_list[0].result(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_fake", d_losses[1].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_gp", d_losses[2].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_cls", d_losses[3].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss", d_losses[4].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_fake", g_losses[0].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_rec", g_losses[1].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_cls", g_losses[2].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss", g_losses[3].numpy(), step=ckpt.epoch)
 
         # test the generator model and save the results for each epoch
         fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch))

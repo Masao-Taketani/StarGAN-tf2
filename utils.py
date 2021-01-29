@@ -68,6 +68,47 @@ def preprocess_for_training(img, label_org):
     return img, label_org, label_trg
 
 
+def initialize_loss_trackers():
+    d_losses = ("d_loss_real",
+                "d_loss_fake",
+                "d_loss_gp",
+                "d_loss_cls",
+                "d_loss")
+
+    g_losses = ("g_loss_fake",
+                "g_loss_rec",
+                "g_loss_cls",
+                "g_loss")
+
+    d_loss_list = []
+    g_loss_list = []
+    dl_list = store_loss_tracker(d_loss_list, d_losses)
+    gl_list = store_loss_tracker(g_loss_list, g_losses)
+
+    return dl_list, gl_list
+
+
+def store_loss_tracker(loss_list, losses):
+    for name in losses:
+        loss_list.append(define_loss_tracker(name))
+
+    return loss_list
+
+
+def define_loss_tracker(name):
+    return tf.keras.metrics.Mean(name=name)
+
+
+def reset_loss_trackers(loss_list):
+    for loss in loss_list:
+        loss.reset_states()
+
+    
+def update_loss_trackers(loss_tracker_list, losses):
+    for tracker, loss in zip(loss_tracker_list, losses):
+        tracker(loss)
+
+
 def get_gradient_penalty(x, x_gen, discriminator):
     """
     for the implementation of the gradient penalty, I referred to the links below.
@@ -258,14 +299,13 @@ def train_gen(step,
     return g_loss_fake, g_loss_rec, g_loss_cls, g_loss
 
 
-@tf.function
 def print_log(epoch, start, end, d_losses, g_losses):
-    print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
+    tf.print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
                                                          end - start))
-    d_log = "d_loss_real: {}, d_loss_fake: {}, d_loss_gp: {}, d_loss_cls: {}, d_loss: {}"
-    g_log = " g_loss_fake: {}, g_loss_rec: {}, g_loss_cls: {}, g_loss: {}"
-    print(d_log.format(d_losses[0], d_losses[1], d_losses[2], d_losses[3], d_losses[4]))
-    print(g_log.format(g_losses[0], g_losses[1], g_losses[2], g_losses[3]))
+    d_log = "d_loss: {:.3f} (d_loss_real: {:.3f}, d_loss_fake: {:.3f}, d_loss_gp: {:.3f}, d_loss_cls: {:.3f})"
+    g_log = "g_loss: {:.3f} (g_loss_fake: {:.3f}, g_loss_rec: {:.3f}, g_loss_cls: {:.3f})"
+    tf.print(d_log.format(d_losses[0], d_losses[1], d_losses[2], d_losses[3], d_losses[4]))
+    tf.print(g_log.format(g_losses[0], g_losses[1], g_losses[2], g_losses[3]))
 
 
 def preprocess_for_testing(img, c_trg):
@@ -290,7 +330,8 @@ def save_img(tensor, fpath):
 @tf.function
 def save_test_results(model, img_list, trg_list, fpath):
     results = []
-    for img, c_trg in zip(img_list, trg_list):
+    for img_path, c_trg in zip(img_list, trg_list):
+        img = read_and_decode_img(img_path)
         img = preprocess_img(img, use_aug=False)
         x, c = preprocess_for_testing(img, c_trg)
         result = model(x, c)
