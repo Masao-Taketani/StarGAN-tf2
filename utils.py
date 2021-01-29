@@ -80,9 +80,9 @@ def get_gradient_penalty(x, x_gen, discriminator):
     with tf.GradientTape() as tape:
         # to get a gradient w.r.t x_hat, we need to record the value on the tape
         tape.watch(x_hat)
-        d_hat = discriminator(x_hat, training=True)
+        out_src, _ = discriminator(x_hat, training=True)
     
-    gradients = tape.gradient(d_hat, x_hat)
+    gradients = tape.gradient(out_src, x_hat)
     l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
     gp_loss = tf.reduce_mean((l2_norm - 1.0) ** 2)
     return gp_loss
@@ -105,7 +105,6 @@ def get_l1_loss(x_real, x_rec):
     return tf.reduce_mean(tf.abs(x_real - x_rec))
 
 
-@tf.function
 def get_lr_decay_factor(epoch, max_epoch, init_lr=0.0001):
     return tf.cast(2.0 * init_lr * (- tf.cast(epoch, tf.float32) / tf.cast(max_epoch, tf.float32) + 1.0), dtype=tf.float32)
 
@@ -131,6 +130,11 @@ def update_lr(gen_opt, disc_opt, max_epoch, epoch, g_lr=0.0001, d_lr=0.0001):
         print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
 
 
+"""
+Need to split the update for generator and discriminator according to the issues below.
+https://github.com/tensorflow/tensorflow/issues/34983#issuecomment-743702919
+So I do not use the 'train_step' function.
+"""
 @tf.function
 def train_step(step, 
                gen, 
@@ -184,50 +188,113 @@ def train_step(step,
         gen_gradients = gen_tape.gradient(g_loss, gen.trainable_variables)
         gen_opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
 
-    return d_loss_real, d_loss_fake, d_loss_cls, d_loss_gp, d_loss, g_loss_fake, g_loss_cls, g_loss
+    return d_loss_real, d_loss_fake, d_loss_cls, d_loss_gp, d_loss, g_loss_fake, g_loss_rec, g_loss_cls, g_loss
 
 
-    @tf.function
-    def print_log(epoch, start, end, losses):
-        print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
-                                                             end-start))
-        print("d_loss_real: {}, d_loss_fake: {}, d_loss_cls: {}, d_loss_gp: {}, " +\
-            "d_loss: {}, g_loss_fake: {}, g_loss_cls: {}, g_loss: {}".format(losses[0],
-                                                                            losses[1],
-                                                                            losses[2],
-                                                                            losses[3],
-                                                                            losses[4],
-                                                                            losses[5],
-                                                                            losses[6],
-                                                                            losses[7]))
-
-    def preprocess_for_testing(img, c_trg):
-        x = tf.expand_dims(img, axis=0)
-        c = tf.expand_dims(c_trg, axis=0)
-        x = tf.convert_to_tensor(x)
-        c = tf.convert_to_tensor(c)
-
-        return x, c
+def predict_before_update(x_real, label_trg, gen, disc):
+    x_fake = gen(x_real, label_trg, training=False)
+    gen_out_src, gen_out_cls = disc(x_fake, training=False)
+    return x_fake, gen_out_src, gen_out_cls
 
 
-    def save_img(tensor, fpath):
-        h, w, c = tensor.shape
-        tensor = denormalize(tensor)
-        tensor = tf.cast(tensor, dtype=tf.uint8) * 255
-        tensor = tf.reshape(tensor, [h//2, w//2, c])
-        bstr = tf.io.encode_jpeg(tensor)
-        with open(fpath, "wb") as f:
-            f.write(bstr)
+@tf.function
+def train_disc(step, 
+               disc, 
+               x_real,
+               x_fake,
+               label_org, 
+               label_trg, 
+               lambda_cls, 
+               lambda_gp, 
+               opt):
+
+    print("label_trg", label_trg)
+    print("label_org", label_org)
+    with tf.GradientTape() as tape:
+        #Compute loss with real images
+        real_out_src, real_out_cls = disc(x_real, training=True)
+        d_loss_real = - get_mean_for_loss(real_out_src)
+        d_loss_cls = get_classification_loss(label_org, real_out_cls)
+        # Compute loss with fake images
+        fake_out_src, fake_out_cls = disc(x_fake, training=True)
+        d_loss_fake = get_mean_for_loss(fake_out_src)
+        # Compute loss for gradient penalty
+        d_loss_gp = get_gradient_penalty(x_real, x_fake, disc)
+        # Compute the total loss for the discriminator
+        d_loss = d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
+
+    # Calculate the gradients and update params for the discriminator and the generator
+    disc_gradients = tape.gradient(d_loss, disc.trainable_variables)
+    opt.apply_gradients(zip(disc_gradients, disc.trainable_variables))
+
+    return d_loss_real, d_loss_fake, d_loss_gp, d_loss_cls, d_loss
 
 
-    @tf.function
-    def save_test_results(model, img_list, trg_list, fpath):
-        results = []
-        for img, c_trg in zip(img_list, trg_list):
-            img = preprocess_img(img, use_aug=False)
-            x, c = preprocess_for_testing(img, c_trg)
-            result = model(x, c)
-            result = tf.squeeze(result, axis=0)
-            results.append(result)
-        tensor = tf.concat(results, axis=1)
-        save_img(tensor, fpath)
+@tf.function
+def train_gen(step, 
+              gen, 
+              x_real,
+              gen_out_src, 
+              gen_out_cls,
+              label_trg, 
+              lambda_cls, 
+              lambda_rec,
+              opt):
+
+    with tf.GradientTape() as tape:
+        # Compute loss for original-to-target domain
+        x_fake = gen(x_real, label_trg, training=True)
+        g_loss_fake = - get_mean_for_loss(gen_out_src)
+        g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
+        # Compute loss for target-to-original domain
+        x_rec = gen(x_fake, label_trg, training=True)
+        g_loss_rec = get_l1_loss(x_real, x_rec)
+        # Compute the total loss for the generator
+        g_loss = g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
+
+    gen_gradients = tape.gradient(g_loss, gen.trainable_variables)
+    opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
+
+    return g_loss_fake, g_loss_rec, g_loss_cls, g_loss
+
+
+@tf.function
+def print_log(epoch, start, end, d_losses, g_losses):
+    print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
+                                                         end - start))
+    d_log = "d_loss_real: {}, d_loss_fake: {}, d_loss_gp: {}, d_loss_cls: {}, d_loss: {}"
+    g_log = " g_loss_fake: {}, g_loss_rec: {}, g_loss_cls: {}, g_loss: {}"
+    print(d_log.format(d_losses[0], d_losses[1], d_losses[2], d_losses[3], d_losses[4]))
+    print(g_log.format(g_losses[0], g_losses[1], g_losses[2], g_losses[3]))
+
+
+def preprocess_for_testing(img, c_trg):
+    x = tf.expand_dims(img, axis=0)
+    c = tf.expand_dims(c_trg, axis=0)
+    x = tf.convert_to_tensor(x)
+    c = tf.convert_to_tensor(c)
+
+    return x, c
+
+
+def save_img(tensor, fpath):
+    h, w, c = tensor.shape
+    tensor = denormalize(tensor)
+    tensor = tf.cast(tensor, dtype=tf.uint8) * 255
+    tensor = tf.reshape(tensor, [h//2, w//2, c])
+    bstr = tf.io.encode_jpeg(tensor)
+    with open(fpath, "wb") as f:
+        f.write(bstr)
+
+
+@tf.function
+def save_test_results(model, img_list, trg_list, fpath):
+    results = []
+    for img, c_trg in zip(img_list, trg_list):
+        img = preprocess_img(img, use_aug=False)
+        x, c = preprocess_for_testing(img, c_trg)
+        result = model(x, c)
+        result = tf.squeeze(result, axis=0)
+        results.append(result)
+    tensor = tf.concat(results, axis=1)
+    save_img(tensor, fpath)

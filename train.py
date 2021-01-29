@@ -2,6 +2,7 @@ import os
 import time
 import datetime
 
+from tqdm import tqdm
 from absl import app
 from absl import flags
 
@@ -64,7 +65,7 @@ def main(argv):
     train_dataset = train_dataset.map(parse_tfrecords)
     train_dataset = train_dataset.map(preprocess_for_training,
                                   num_parallel_calls=AUTOTUNE)
-    train_dataset = train_dataset.batch(batch_size=FLAGS.batch_size)
+    train_dataset = train_dataset.batch(batch_size=FLAGS.batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
     # Get fixed inputs for testing and debugging.
     c_fixed_trg_list = create_labels(test_lbls[:10], 
@@ -102,44 +103,57 @@ def main(argv):
     # Train the discriminator and the generator
     while ckpt.epoch < FLAGS.num_epochs:
         ckpt.epoch.assign_add(1)
-        step = 0
+        step = tf.constant(0)
 
         if ckpt.epoch > FLAGS.num_epochs_decay:
             update_lr(gen_opt, disc_opt, FLAGS.num_epochs, ckpt.epoch)
 
         start = time.time()
-
-        for x_real, label_org, label_trg in train_dataset:
+        for x_real, label_org, label_trg in tqdm(train_dataset):
             step += 1
-            losses = train_step(step, 
-                                gen, 
-                                disc, 
-                                x_real, 
-                                label_org, 
-                                label_trg, 
-                                FLAGS.lambda_cls, 
-                                FLAGS.lambda_gp, 
-                                FLAGS.lambda_rec, 
-                                FLAGS.num_critic_updates, 
-                                disc_opt, 
-                                gen_opt)
+            x_fake, gen_out_src, gen_out_cls = predict_before_update(x_real, 
+                                                                     label_trg, 
+                                                                     gen, 
+                                                                     disc)
 
-        if step % 1000 == 0:
-                print(".", end="")
+            d_losses = train_disc(step, 
+                                  disc, 
+                                  x_real,
+                                  x_fake,
+                                  label_org, 
+                                  label_trg, 
+                                  FLAGS.lambda_cls,
+                                  FLAGS.lambda_gp, 
+                                  disc_opt)
+                                  
+            if step % FLAGS.num_critic_updates == 0:
+                g_losses = train_gen(step, 
+                                     gen, 
+                                     x_real,
+                                     gen_out_src, 
+                                     gen_out_cls,
+                                     label_trg, 
+                                     FLAGS.lambda_cls,
+                                     FLAGS.lambda_rec,
+                                     gen_opt)
+
+            if step % 1000 == 0:
+                    print(".", end="")
 
         end = time.time()
-        print_log(ckpt.epoch.numpy(), start, end, losses)
+        print_log(ckpt.epoch.numpy(), start, end, d_losses, g_losses)
 
         # keep the log for the losses
         with summary_writer.as_default():
-            tf.summary.scalar("d_loss_real", losses[0], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_fake", losses[1], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_cls", losses[2], step=ckpt.epoch)
-            tf.summary.scalar("d_loss_gp", losses[3], step=ckpt.epoch)
-            tf.summary.scalar("d_loss", losses[4], step=ckpt.epoch)
-            tf.summary.scalar("g_loss_fake", losses[5], step=ckpt.epoch)
-            tf.summary.scalar("g_loss_cls", losses[6], step=ckpt.epoch)
-            tf.summary.scalar("g_loss", losses[7], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_real", d_losses[0], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_fake", d_losses[1], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_gp", d_losses[2], step=ckpt.epoch)
+            tf.summary.scalar("d_loss_cls", d_losses[3], step=ckpt.epoch)
+            tf.summary.scalar("d_loss", d_losses[4], step=ckpt.epoch)
+            tf.summary.scalar("g_loss_fake", g_losses[0], step=ckpt.epoch)
+            tf.summary.scalar("g_loss_rec", g_losses[1], step=ckpt.epoch)
+            tf.summary.scalar("g_loss_cls", g_losses[2], step=ckpt.epoch)
+            tf.summary.scalar("g_loss", g_losses[3], step=ckpt.epoch)
 
         # test the generator model and save the results for each epoch
         fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch))
