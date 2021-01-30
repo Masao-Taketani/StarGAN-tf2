@@ -2,6 +2,7 @@ import random
 import os
 import sys
 import math
+import copy
 
 import numpy as np
 from tqdm import tqdm
@@ -91,7 +92,6 @@ def create_labels(c_org, c_dim=5, selected_attrs=None):
 ## For TFRecords
 # The following functions can be used to convert a value to a type compatible
 # with tf.train.Example.
-
 def _bytes_feature(value):
   """Returns a bytes_list from a string / byte."""
   if isinstance(value, type(tf.constant(0))):
@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
     print("\nShape of train_lbls:", len(train_lbls), len(train_lbls[0]))
 
-    orgs_to_test = train_lbls[:5]
+    orgs_to_test = train_lbls[:16]
     print("\nOriginal test labels\n", orgs_to_test)
     trgs_to_test = create_labels(orgs_to_test, 5, selected_attrs)
     print("\nTarget test labels\n", trgs_to_test)

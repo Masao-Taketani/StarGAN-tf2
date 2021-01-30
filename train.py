@@ -39,6 +39,7 @@ flags.DEFINE_float("g_lr", 0.0001, "learning rate for the generator")
 flags.DEFINE_float("d_lr", 0.0001, "learning rate for the discriminator")
 flags.DEFINE_float("beta1", 0.5, "beta1 for Adam optimizer")
 flags.DEFINE_float("beta2", 0.999, "beta2 for Adam optimizer")
+flags.DEFINE_integer("num_test", 10, "number of test examples")
 
 
 def main(argv):
@@ -68,7 +69,7 @@ def main(argv):
     train_dataset = train_dataset.batch(batch_size=FLAGS.batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
     # Get fixed inputs for testing and debugging.
-    c_fixed_trg_list = create_labels(test_lbls[:10], 
+    c_fixed_trg_list = create_labels(test_lbls[:FLAGS.num_test], 
                                      FLAGS.c_dim, 
                                      FLAGS.selected_attrs)
 
@@ -166,8 +167,8 @@ def main(argv):
             tf.summary.scalar("g_loss", g_losses[3].numpy(), step=ckpt.epoch)
 
         # test the generator model and save the results for each epoch
-        fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch))
-        save_test_results(gen, test_imgs[:10], c_fixed_trg_list, fpath)
+        fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch.numpy()))
+        save_test_results(gen, test_imgs[:FLAGS.num_test], c_fixed_trg_list, fpath)
 
 
 if __name__ == "__main__":

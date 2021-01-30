@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Conv2D, BatchNormalization, LeakyReLU,\
-     ReLU, Conv2DTranspose, Dropout, concatenate, ZeroPadding2D, Input
+     ReLU, Conv2DTranspose, Dropout, ZeroPadding2D, Input
 from tensorflow.keras.activations import tanh
 
 

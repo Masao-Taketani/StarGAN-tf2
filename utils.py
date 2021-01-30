@@ -308,34 +308,51 @@ def print_log(epoch, start, end, d_losses, g_losses):
     tf.print(g_log.format(g_losses[0], g_losses[1], g_losses[2], g_losses[3]))
 
 
-def preprocess_for_testing(img, c_trg):
-    x = tf.expand_dims(img, axis=0)
-    c = tf.expand_dims(c_trg, axis=0)
-    x = tf.convert_to_tensor(x)
-    c = tf.convert_to_tensor(c)
+def preprocess_for_testing(img, c_dim):
+    multi_imgs = []
 
-    return x, c
+    img = tf.convert_to_tensor(img)
+    img = tf.expand_dims(img, axis=0)
+    for i in range(c_dim):
+        multi_imgs.append(img)
+    imgs = tf.concat(multi_imgs, axis=0)
+
+    return imgs
 
 
 def save_img(tensor, fpath):
-    h, w, c = tensor.shape
+    bstr = tf.io.encode_jpeg(tensor)
+    tf.print("bstr", type(bstr.numpy()))
+    with open(fpath, "wb") as f:
+        f.write(bstr.numpy())
+
+
+def make_img_horizontal(tensor):
+    tensor_list = tf.raw_ops.Unpack(value=tensor, num=tensor.shape[0])
+    
+    return tf.concat(tensor_list, axis=1)
+
+
+def postprocess_to_plot(results):
+    tensor = tf.concat(results, axis=0)
+    h, w, _ = tensor.shape
     tensor = denormalize(tensor)
     tensor = tf.cast(tensor, dtype=tf.uint8) * 255
-    tensor = tf.reshape(tensor, [h//2, w//2, c])
-    bstr = tf.io.encode_jpeg(tensor)
-    with open(fpath, "wb") as f:
-        f.write(bstr)
+    tensor = tf.image.resize(tensor, [h//2, w//2], method="nearest")
+
+    return tensor
 
 
-@tf.function
 def save_test_results(model, img_list, trg_list, fpath):
     results = []
-    for img_path, c_trg in zip(img_list, trg_list):
+    c_dim = len(trg_list)
+    trg_tensor = tf.convert_to_tensor(trg_list)
+    for i, img_path in enumerate(img_list):
         img = read_and_decode_img(img_path)
         img = preprocess_img(img, use_aug=False)
-        x, c = preprocess_for_testing(img, c_trg)
-        result = model(x, c)
-        result = tf.squeeze(result, axis=0)
-        results.append(result)
-    tensor = tf.concat(results, axis=1)
+        x = preprocess_for_testing(img, c_dim)
+        result = model(x, trg_tensor[:, i, :])
+        horizontal_img = make_img_horizontal(result)
+        results.append(horizontal_img)
+    tensor = postprocess_to_plot(results)
     save_img(tensor, fpath)
