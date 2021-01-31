@@ -88,6 +88,13 @@ def initialize_loss_trackers():
     return dl_list, gl_list
 
 
+def define_train_loop(use_mp):
+    if use_mp:
+        return train_disc_mp, train_gen_mp
+    else:
+        return train_disc, train_gen
+        
+
 def store_loss_tracker(loss_list, losses):
     for name in losses:
         loss_list.append(define_loss_tracker(name))
@@ -110,6 +117,26 @@ def update_loss_trackers(loss_tracker_list, losses):
 
 
 def get_gradient_penalty(x, x_gen, discriminator):
+    """
+    for the implementation of the gradient penalty, I referred to the links below.
+    https://github.com/timsainb/tensorflow2-generative-models/blob/master/3.0-WGAN-GP-fashion-mnist.ipynb
+    https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
+    """
+    # shape=[x.shape[0], 1, 1, 1] to generate a random number for every sample
+    epsilon = tf.random.uniform([x.shape[0], 1, 1, 1], 0.0, 1.0)
+    x_hat = epsilon * x + (1 - epsilon) * x_gen
+    with tf.GradientTape() as tape:
+        # to get a gradient w.r.t x_hat, we need to record the value on the tape
+        tape.watch(x_hat)
+        out_src, _ = discriminator(x_hat, training=True)
+    
+    gradients = tape.gradient(out_src, x_hat)
+    l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
+    gp_loss = tf.reduce_mean((l2_norm - 1.0) ** 2)
+    return gp_loss
+
+
+def get_gradient_penalty_mp(x, x_gen, discriminator):
     """
     for the implementation of the gradient penalty, I referred to the links below.
     https://github.com/timsainb/tensorflow2-generative-models/blob/master/3.0-WGAN-GP-fashion-mnist.ipynb
@@ -249,8 +276,6 @@ def train_disc(step,
                lambda_gp, 
                opt):
 
-    print("label_trg", label_trg)
-    print("label_org", label_org)
     with tf.GradientTape() as tape:
         #Compute loss with real images
         real_out_src, real_out_cls = disc(x_real, training=True)
@@ -267,6 +292,39 @@ def train_disc(step,
     # Calculate the gradients and update params for the discriminator and the generator
     disc_gradients = tape.gradient(d_loss, disc.trainable_variables)
     opt.apply_gradients(zip(disc_gradients, disc.trainable_variables))
+
+    return d_loss_real, d_loss_fake, d_loss_gp, d_loss_cls, d_loss
+
+
+@tf.function
+def train_disc_mp(step, 
+                  disc, 
+                  x_real,
+                  x_fake,
+                  label_org, 
+                  label_trg, 
+                  lambda_cls, 
+                  lambda_gp, 
+                  opt):
+
+    with tf.GradientTape() as tape:
+        #Compute loss with real images
+        real_out_src, real_out_cls = disc(x_real, training=True)
+        d_loss_real = - get_mean_for_loss(real_out_src)
+        d_loss_cls = get_classification_loss(label_org, real_out_cls)
+        # Compute loss with fake images
+        fake_out_src, fake_out_cls = disc(x_fake, training=True)
+        d_loss_fake = get_mean_for_loss(fake_out_src)
+        # Compute loss for gradient penalty
+        d_loss_gp = get_gradient_penalty_mp(x_real, x_fake, disc)
+        # Compute the total loss for the discriminator
+        d_loss = d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
+        scaled_d_loss = opt.get_scaled_loss(d_loss)
+
+    # Calculate the gradients and update params for the discriminator and the generator
+    scaled_d_gradients = tape.gradient(scaled_d_loss, disc.trainable_variables)
+    d_gradients = opt.get_unscaled_gradients(scaled_d_gradients)
+    opt.apply_gradients(zip(d_gradients, disc.trainable_variables))
 
     return d_loss_real, d_loss_fake, d_loss_gp, d_loss_cls, d_loss
 
@@ -295,6 +353,36 @@ def train_gen(step,
 
     gen_gradients = tape.gradient(g_loss, gen.trainable_variables)
     opt.apply_gradients(zip(gen_gradients, gen.trainable_variables))
+
+    return g_loss_fake, g_loss_rec, g_loss_cls, g_loss
+
+
+@tf.function
+def train_gen_mp(step, 
+                 gen, 
+                 x_real,
+                 gen_out_src, 
+                 gen_out_cls,
+                 label_trg, 
+                 lambda_cls, 
+                 lambda_rec,
+                 opt):
+
+    with tf.GradientTape() as tape:
+        # Compute loss for original-to-target domain
+        x_fake = gen(x_real, label_trg, training=True)
+        g_loss_fake = - get_mean_for_loss(gen_out_src)
+        g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
+        # Compute loss for target-to-original domain
+        x_rec = gen(x_fake, label_trg, training=True)
+        g_loss_rec = get_l1_loss(x_real, x_rec)
+        # Compute the total loss for the generator
+        g_loss = g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
+        scaled_g_loss = opt.get_scaled_loss(g_loss)
+
+    scaled_g_gradients = tape.gradient(scaled_g_loss, gen.trainable_variables)
+    g_gradients = opt.get_unscaled_gradients(scaled_g_gradients)
+    opt.apply_gradients(zip(g_gradients, gen.trainable_variables))
 
     return g_loss_fake, g_loss_rec, g_loss_cls, g_loss
 

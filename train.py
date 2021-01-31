@@ -7,6 +7,7 @@ from absl import app
 from absl import flags
 
 import tensorflow as tf
+from tensorflow.keras import mixed_precision
 
 from data_loader import *
 from utils import *
@@ -40,9 +41,13 @@ flags.DEFINE_float("d_lr", 0.0001, "learning rate for the discriminator")
 flags.DEFINE_float("beta1", 0.5, "beta1 for Adam optimizer")
 flags.DEFINE_float("beta2", 0.999, "beta2 for Adam optimizer")
 flags.DEFINE_integer("num_test", 10, "number of test examples")
+flags.DEFINE_bool("use_mp", True, "whether to use mixed precision for training")
 
 
 def main(argv):
+    if FLAGS.use_mp:
+        mixed_precision.set_global_policy('mixed_float16')
+
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
@@ -74,11 +79,14 @@ def main(argv):
                                      FLAGS.selected_attrs)
 
     # Build the generator and discriminator
-    gen, disc = build_model(FLAGS.c_dim)
+    gen, disc = build_model(FLAGS.c_dim, FLAGS.use_mp)
 
     # Define the optimizers for the generator and the discriminator
     gen_opt = tf.keras.optimizers.Adam(FLAGS.g_lr, FLAGS.beta1, FLAGS.beta2)
     disc_opt = tf.keras.optimizers.Adam(FLAGS.d_lr, FLAGS.beta1, FLAGS.beta2)
+
+    gen_opt = mixed_precision.LossScaleOptimizer(gen_opt)
+    disc_opt = mixed_precision.LossScaleOptimizer(disc_opt)
 
     # Set the checkpoint and the checkpoint manager.
     ckpt = tf.train.Checkpoint(epoch=tf.Variable(0, dtype=tf.int64),
@@ -102,6 +110,7 @@ def main(argv):
                                 )
 
     d_loss_list, g_loss_list = initialize_loss_trackers()
+    train_d, train_g = define_train_loop(FLAGS.use_mp)
 
     # Train the discriminator and the generator
     while ckpt.epoch < FLAGS.num_epochs:
@@ -121,31 +130,30 @@ def main(argv):
                                                                      gen, 
                                                                      disc)
 
-            d_losses = train_disc(step, 
-                                  disc, 
-                                  x_real,
-                                  x_fake,
-                                  label_org, 
-                                  label_trg, 
-                                  FLAGS.lambda_cls,
-                                  FLAGS.lambda_gp, 
-                                  disc_opt)
+            d_losses = train_d(step, 
+                               disc, 
+                               x_real,
+                               x_fake,
+                               label_org, 
+                               label_trg, 
+                               FLAGS.lambda_cls,
+                               FLAGS.lambda_gp, 
+                               disc_opt)
                                 
             update_loss_trackers(d_loss_list, d_losses)
 
             if step % FLAGS.num_critic_updates == 0:
-                g_losses = train_gen(step, 
-                                     gen, 
-                                     x_real,
-                                     gen_out_src, 
-                                     gen_out_cls,
-                                     label_trg, 
-                                     FLAGS.lambda_cls,
-                                     FLAGS.lambda_rec,
-                                     gen_opt)
+                g_losses = train_g(step, 
+                                   gen, 
+                                   x_real,
+                                   gen_out_src, 
+                                   gen_out_cls,
+                                   label_trg, 
+                                   FLAGS.lambda_cls,
+                                   FLAGS.lambda_rec,
+                                   gen_opt)
 
                 update_loss_trackers(g_loss_list, g_losses)
-                break
 
             if step % 1000 == 0:
                     print(".", end="")
@@ -153,18 +161,17 @@ def main(argv):
         end = time.time()
         print_log(ckpt.epoch.numpy(), start, end, d_losses, g_losses)
 
-        print("loss", d_loss_list[0].result(), "epoch", ckpt.epoch)
         # keep the log for the losses
         with summary_writer.as_default():
             tf.summary.scalar("d_loss_real", d_loss_list[0].result(), step=ckpt.epoch)
-            tf.summary.scalar("d_loss_fake", d_losses[1].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("d_loss_gp", d_losses[2].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("d_loss_cls", d_losses[3].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("d_loss", d_losses[4].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("g_loss_fake", g_losses[0].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("g_loss_rec", g_losses[1].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("g_loss_cls", g_losses[2].numpy(), step=ckpt.epoch)
-            tf.summary.scalar("g_loss", g_losses[3].numpy(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_fake", d_loss_list[1].result(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_gp", d_loss_list[2].result(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss_cls", d_loss_list[3].result(), step=ckpt.epoch)
+            tf.summary.scalar("d_loss", d_loss_list[4].result(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_fake", g_loss_list[0].result(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_rec", g_loss_list[1].result(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss_cls", g_loss_list[2].result(), step=ckpt.epoch)
+            tf.summary.scalar("g_loss", g_loss_list[3].result(), step=ckpt.epoch)
 
         # test the generator model and save the results for each epoch
         fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch.numpy()))
