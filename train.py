@@ -28,12 +28,12 @@ flags.DEFINE_string("ckpt_dir", "ckpts/train/", "path to the checkpoint dir")
 flags.DEFINE_string("tfrecord_dir", "data/celeba/tfrecords/", "path to the tfrecord dir")
 flags.DEFINE_string("test_result_dir", "test_results/", "path to the test result dir")
 flags.DEFINE_string("logdir", "logs/", "path to the log dir")
-flags.DEFINE_integer("num_epochs", 200, "number of epopchs to train")
-flags.DEFINE_integer("num_epochs_decay", 100, "number of epochs to start lr decay")
+flags.DEFINE_integer("num_epochs", 20, "number of epopchs to train")
+flags.DEFINE_integer("num_epochs_decay", 10, "number of epochs to start lr decay")
 flags.DEFINE_float("lambda_cls", 1.0, "weight for domain classification loss")
 flags.DEFINE_float("lambda_rec", 10.0, "weight for reconstruction loss")
 flags.DEFINE_float("lambda_gp", 10.0, "weight for gradient penalty loss")
-flags.DEFINE_integer("model_save_epoch", "10", "to save model every specified epochs")
+flags.DEFINE_integer("model_save_epoch", 1, "to save model every specified epochs")
 flags.DEFINE_integer("num_critic_updates", 5, "number of a Discriminator updates "
                                               "every time a generator updates")
 flags.DEFINE_float("g_lr", 0.0001, "learning rate for the generator")
@@ -176,6 +176,10 @@ def main(argv):
         # test the generator model and save the results for each epoch
         fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(ckpt.epoch.numpy()))
         save_test_results(gen, test_imgs[:FLAGS.num_test], c_fixed_trg_list, fpath)
+
+        if (ckpt.epoch) % FLAGS.model_save_epoch == 0:
+            ckpt_save_path = ckpt_manager.save()
+            print("Saving a checkpoint for epoch {} at {}".format(ckpt.epoch.numpy(), ckpt_save_path))
 
 
 if __name__ == "__main__":

@@ -6,6 +6,18 @@
 ## Datasets
 [CelebA](https://www.tensorflow.org/datasets/catalog/celeb_a)
 
+## Prepare the Dataset
+**coming soon**
+
+## Train
+If your GPU has Tensor Cores(compute capability 7.0 or higher), you can train the model as follows. Otherwise you need to set an option `--use_mp False` to train.
+```
+python train.py
+```
+
+## Test
+**coming soon**
+
 ## References
 - Paper
   - [StarGAN: Unified Generative Adversarial Networks

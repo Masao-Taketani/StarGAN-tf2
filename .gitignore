@@ -3,7 +3,7 @@ __pycache__/
 core.*
 data/
 .cache.*
-test*
+*test*
 ckpts/
 logs/
 test_results/

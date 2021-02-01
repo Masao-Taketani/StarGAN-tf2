@@ -425,7 +425,7 @@ def postprocess_to_plot(results):
     tensor = tf.concat(results, axis=0)
     h, w, _ = tensor.shape
     tensor = denormalize(tensor)
-    tensor = tf.cast(tensor, dtype=tf.uint8) * 255
+    tensor = tf.cast(tensor * 255, dtype=tf.uint8)
     tensor = tf.image.resize(tensor, [h//2, w//2], method="nearest")
 
     return tensor
