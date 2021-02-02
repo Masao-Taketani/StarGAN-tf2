@@ -369,11 +369,13 @@ class DiscriminatorMP(Model):
         self.conv2d_src = Conv2D(filters=1, 
                                  kernel_size=3, 
                                  strides=1,
-                                 padding="same")
+                                 padding="same",
+                                 use_bias=False)
         self.conv2d_cls = Conv2D(filters=c_dim,
                                  kernel_size=img_size//64,
                                  strides=1,
-                                 padding="valid")
+                                 padding="valid",
+                                 use_bias=False)
 
         self.cast_last_output_1 = Activation('linear', dtype='float32')
         self.cast_last_output_2 = Activation('linear', dtype='float32')
@@ -577,7 +579,8 @@ class GeneratorMP(Model):
                                   strides=1,
                                   padding="valid",
                                   activation="tanh",
-                                  name="g_last_conv2d")
+                                  name="g_last_conv2d",
+                                  use_bias=False)
 
         self.cast_last_output = Activation('linear', dtype='float32')
 
