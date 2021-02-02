@@ -267,11 +267,13 @@ class Discriminator(Model):
         self.conv2d_src = Conv2D(filters=1, 
                                  kernel_size=3, 
                                  strides=1,
-                                 padding="same")
+                                 padding="same",
+                                 use_bias=False)
         self.conv2d_cls = Conv2D(filters=c_dim,
                                  kernel_size=img_size//64,
                                  strides=1,
-                                 padding="valid")
+                                 padding="valid",
+                                 use_bias=False)
 
     def call(self, inputs):
         x = self.downsample_1(inputs)
@@ -469,7 +471,8 @@ class Generator(Model):
                                   strides=1,
                                   padding="valid",
                                   activation="tanh",
-                                  name="g_last_conv2d")
+                                  name="g_last_conv2d",
+                                  use_bias=False)
 
     def call(self, x, c):
         # Convert the shape of 'c': (bs, c_dim) -> (bs, 1, 1, c_dim)
