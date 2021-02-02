@@ -30,6 +30,8 @@ flags.DEFINE_string("test_result_dir", "test_results/", "path to the test result
 flags.DEFINE_string("logdir", "logs/", "path to the log dir")
 flags.DEFINE_integer("num_epochs", 20, "number of epopchs to train")
 flags.DEFINE_integer("num_epochs_decay", 10, "number of epochs to start lr decay")
+flags.DEFINE_integer("num_iters", 200000, "number of total iterations for training D")
+flags.DEFINE_integer("num_iters_decay", 100000, "number of iterations for decaying lr")
 flags.DEFINE_float("lambda_cls", 1.0, "weight for domain classification loss")
 flags.DEFINE_float("lambda_rec", 10.0, "weight for reconstruction loss")
 flags.DEFINE_float("lambda_gp", 10.0, "weight for gradient penalty loss")
@@ -84,9 +86,9 @@ def main(argv):
     # Define the optimizers for the generator and the discriminator
     gen_opt = tf.keras.optimizers.Adam(FLAGS.g_lr, FLAGS.beta1, FLAGS.beta2)
     disc_opt = tf.keras.optimizers.Adam(FLAGS.d_lr, FLAGS.beta1, FLAGS.beta2)
-
-    gen_opt = mixed_precision.LossScaleOptimizer(gen_opt)
-    disc_opt = mixed_precision.LossScaleOptimizer(disc_opt)
+    if FLAGS.use_mp:
+        gen_opt = mixed_precision.LossScaleOptimizer(gen_opt)
+        disc_opt = mixed_precision.LossScaleOptimizer(disc_opt)
 
     # Set the checkpoint and the checkpoint manager.
     ckpt = tf.train.Checkpoint(epoch=tf.Variable(0, dtype=tf.int64),
@@ -112,6 +114,9 @@ def main(argv):
     d_loss_list, g_loss_list = initialize_loss_trackers()
     train_d, train_g = define_train_loop(FLAGS.use_mp)
 
+    iters_per_epoch = FLAGS.num_iters // FLAGS.num_epochs
+    diff_iter = FLAGS.num_iters - FLAGS.num_iters_decay
+
     # Train the discriminator and the generator
     while ckpt.epoch < FLAGS.num_epochs:
         ckpt.epoch.assign_add(1)
@@ -119,12 +124,14 @@ def main(argv):
         reset_loss_trackers(d_loss_list)
         reset_loss_trackers(g_loss_list)
 
-        if ckpt.epoch > FLAGS.num_epochs_decay:
-            update_lr(gen_opt, disc_opt, FLAGS.num_epochs, ckpt.epoch)
+        #if ckpt.epoch > FLAGS.num_epochs_decay:
+        #    update_lr(gen_opt, disc_opt, FLAGS.num_epochs, ckpt.epoch, FLAGS.g_lr, FLAGS.d_lr)
 
         start = time.time()
         for x_real, label_org, label_trg in tqdm(train_dataset):
             step += 1
+            if step.numpy() > FLAGS.num_iters_decay:
+                update_lr_by_iter(gen_opt, disc_opt, step, diff_iter, FLAGS.g_lr, FLAGS.d_lr)
             x_fake, gen_out_src, gen_out_cls = predict_before_update(x_real, 
                                                                      label_trg, 
                                                                      gen, 
@@ -155,8 +162,8 @@ def main(argv):
 
                 update_loss_trackers(g_loss_list, g_losses)
 
-            if step % 1000 == 0:
-                    print(".", end="")
+            if step.numpy() == iters_per_epoch:
+                break
 
         end = time.time()
         print_log(ckpt.epoch.numpy(), start, end, d_losses, g_losses)

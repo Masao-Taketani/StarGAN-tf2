@@ -136,26 +136,6 @@ def get_gradient_penalty(x, x_gen, discriminator):
     return gp_loss
 
 
-def get_gradient_penalty_mp(x, x_gen, discriminator):
-    """
-    for the implementation of the gradient penalty, I referred to the links below.
-    https://github.com/timsainb/tensorflow2-generative-models/blob/master/3.0-WGAN-GP-fashion-mnist.ipynb
-    https://qiita.com/triwave33/items/72c7fceea2c6e48c8c07
-    """
-    # shape=[x.shape[0], 1, 1, 1] to generate a random number for every sample
-    epsilon = tf.random.uniform([x.shape[0], 1, 1, 1], 0.0, 1.0)
-    x_hat = epsilon * x + (1 - epsilon) * x_gen
-    with tf.GradientTape() as tape:
-        # to get a gradient w.r.t x_hat, we need to record the value on the tape
-        tape.watch(x_hat)
-        out_src, _ = discriminator(x_hat, training=True)
-    
-    gradients = tape.gradient(out_src, x_hat)
-    l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
-    gp_loss = tf.reduce_mean((l2_norm - 1.0) ** 2)
-    return gp_loss
-
-
 def get_classification_loss(target, logits):
     logits = tf.squeeze(logits)
     # Compute binary or softmax cross entropy loss.
@@ -177,6 +157,10 @@ def get_lr_decay_factor(epoch, max_epoch, init_lr=0.0001):
     return tf.cast(2.0 * init_lr * (- tf.cast(epoch, tf.float32) / tf.cast(max_epoch, tf.float32) + 1.0), dtype=tf.float32)
 
 
+def get_lr_decay_factor_by_iter(iteration, diff_iter, init_lr=0.0001):
+    return tf.cast(init_lr * (- tf.cast(iteration, tf.float32) / tf.cast(diff_iter, tf.float32) + 2.0), dtype=tf.float32)
+
+
 @tf.function
 def update_lr(gen_opt, disc_opt, max_epoch, epoch, g_lr=0.0001, d_lr=0.0001):
     if g_lr != d_lr:
@@ -184,7 +168,7 @@ def update_lr(gen_opt, disc_opt, max_epoch, epoch, g_lr=0.0001, d_lr=0.0001):
         gen_opt.lr.assign(decayed_lr)
         disc_opt.lr.assign(decayed_lr)
         # to debug
-        print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
+        tf.print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
     else:
         g_decayed_lr =  get_lr_decay_factor(epoch, 
                                             max_epoch,
@@ -196,6 +180,27 @@ def update_lr(gen_opt, disc_opt, max_epoch, epoch, g_lr=0.0001, d_lr=0.0001):
         disc_opt.lr.assign(d_decayed_lr)
         # to debug
         print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
+
+
+@tf.function
+def update_lr_by_iter(gen_opt, disc_opt, iteration, diff_iter, g_lr=0.0001, d_lr=0.0001):
+    if g_lr != d_lr:
+        decayed_lr = get_lr_decay_factor_by_iter(iteration, diff_iter, g_lr)
+        gen_opt.lr.assign(decayed_lr)
+        disc_opt.lr.assign(decayed_lr)
+        # to debug
+        #tf.print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
+    else:
+        g_decayed_lr =  get_lr_decay_factor_by_iter(iteration, 
+                                                    diff_iter,
+                                                    g_lr)
+        d_decayed_lr =  get_lr_decay_factor_by_iter(iteration, 
+                                                    diff_iter,
+                                                    d_lr)
+        gen_opt.lr.assign(g_decayed_lr)
+        disc_opt.lr.assign(d_decayed_lr)
+        # to debug
+        #print("decayed lr G: {}, D: {}".format(gen_opt.lr, disc_opt.lr))
 
 
 """
@@ -316,7 +321,7 @@ def train_disc_mp(step,
         fake_out_src, fake_out_cls = disc(x_fake, training=True)
         d_loss_fake = get_mean_for_loss(fake_out_src)
         # Compute loss for gradient penalty
-        d_loss_gp = get_gradient_penalty_mp(x_real, x_fake, disc)
+        d_loss_gp = get_gradient_penalty(x_real, x_fake, disc)
         # Compute the total loss for the discriminator
         d_loss = d_loss_real + d_loss_fake + lambda_gp * d_loss_gp + lambda_cls * d_loss_cls
         scaled_d_loss = opt.get_scaled_loss(d_loss)
@@ -426,7 +431,7 @@ def postprocess_to_plot(results):
     h, w, _ = tensor.shape
     tensor = denormalize(tensor)
     tensor = tf.cast(tensor * 255, dtype=tf.uint8)
-    tensor = tf.image.resize(tensor, [h//2, w//2], method="nearest")
+    #tensor = tf.image.resize(tensor, [h//2, w//2], method="nearest")
 
     return tensor
 
