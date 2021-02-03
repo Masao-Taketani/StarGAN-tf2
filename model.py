@@ -297,7 +297,7 @@ class Discriminator(Model):
         out_src = self.conv2d_src(x)
         out_cls = self.conv2d_cls(x)
 
-        return out_src, tf.reshape(out_cls, [-1, out_cls[-1]])
+        return out_src, tf.reshape(out_cls, [-1, out_cls.shape[-1]])
 
     def summary(self):
         x = Input(shape=INPUT_SHAPE)
@@ -406,7 +406,7 @@ class DiscriminatorMP(Model):
         out_src = self.cast_last_output_1(out_src)
         out_cls = self.cast_last_output_2(out_cls)
 
-        return out_src, tf.reshape(out_cls, [-1, out_cls[-1]])
+        return out_src, tf.reshape(out_cls, [-1, out_cls.shape[-1]])
 
     def summary(self):
         x = Input(shape=INPUT_SHAPE)
