@@ -7,3 +7,4 @@ data/
 ckpts/
 logs/
 test_results/
+rm_*

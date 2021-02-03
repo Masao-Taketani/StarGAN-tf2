@@ -3,6 +3,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Conv2D, BatchNormalization, LeakyReLU,\
      ReLU, Conv2DTranspose, Dropout, ZeroPadding2D, Input, Activation
 from tensorflow.keras.activations import tanh
+import tensorflow_addons as tfa
 
 
 # For testing
@@ -13,7 +14,12 @@ def get_norm_layer(norm_type):
     if norm_type.lower() == "batchnorm":
         return BatchNormalization()
     elif norm_type.lower() == "instancenorm":
-        return InstanceNormalization()
+        #return InstanceNormalization()
+        return tfa.layers.InstanceNormalization(axis=3, 
+                                   center=True, 
+                                   scale=True,
+                                   beta_initializer="random_uniform",
+                                   gamma_initializer="random_uniform")
     else:
         raise ValueError("arg `norm_type` has to be either batchnorm "
                          "or instancenorm. What you specified is "
@@ -39,31 +45,37 @@ class ResidualBlock(Layer):
                  filters, 
                  size=3, 
                  strides=1, 
-                 padding="same", 
+                 padding="same",
+                 norm_type="instancenorm",
                  name="residual_block"):
 
         super(ResidualBlock, self).__init__(name=name)
+        self.norm_type = norm_type
         self.size = size
         self.conv2d_1 = Conv2D(filters, 
                                size, 
                                strides, 
                                padding=padding,
                                use_bias=False)
-        self.instance_norm_1 = InstanceNormalization()
+        if self.norm_type:
+            self.norm_layer_1 = get_norm_layer(norm_type)
         self.ReLU = ReLU()
         self.conv2d_2 = Conv2D(filters,
                                size,
                                strides,
                                padding=padding,
                                use_bias=False)
-        self.instance_norm_2 = InstanceNormalization()
+        if self.norm_type:
+            self.norm_layer_2 = get_norm_layer(norm_type)
 
     def call(self, inputs):
         x = self.conv2d_1(inputs)
-        x = self.instance_norm_1(x)
+        if self.norm_type:
+            self.norm_layer_1(x)
         x = self.ReLU(x)
         x = self.conv2d_2(x)
-        x = self.instance_norm_2(x)
+        if self.norm_type:
+            self.norm_layer_2(x)
         return x + inputs
 
 
@@ -285,7 +297,7 @@ class Discriminator(Model):
         out_src = self.conv2d_src(x)
         out_cls = self.conv2d_cls(x)
 
-        return out_src, out_cls
+        return out_src, tf.reshape(out_cls, [-1, out_cls[-1]])
 
     def summary(self):
         x = Input(shape=INPUT_SHAPE)
@@ -394,7 +406,7 @@ class DiscriminatorMP(Model):
         out_src = self.cast_last_output_1(out_src)
         out_cls = self.cast_last_output_2(out_cls)
 
-        return out_src, out_cls
+        return out_src, tf.reshape(out_cls, [-1, out_cls[-1]])
 
     def summary(self):
         x = Input(shape=INPUT_SHAPE)
