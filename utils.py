@@ -137,10 +137,14 @@ def get_gradient_penalty(x, x_gen, discriminator):
 
 
 def get_classification_loss(target, logits):
+    #print("target", target)
+    #print("logits", logits)
+    target = tf.cast(target, dtype=tf.float32)
     logits = tf.squeeze(logits)
     # Compute binary or softmax cross entropy loss.
     loss_total = tf.keras.losses.BinaryCrossentropy(from_logits=True)(target, 
                                                                       logits)
+    #loss_total = tf.nn.sigmoid_cross_entropy_with_logits(labels=target, logits=logits)
     loss = tf.reduce_mean(loss_total)
     return loss
 
