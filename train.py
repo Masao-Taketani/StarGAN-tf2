@@ -46,6 +46,9 @@ flags.DEFINE_integer("num_test", 10, "number of test examples")
 flags.DEFINE_bool("use_mp", True, "whether to use mixed precision for training")
 
 
+#tf.config.experimental.enable_tensor_float_32_execution(enabled=False)
+
+
 def main(argv):
     if FLAGS.use_mp:
         mixed_precision.set_global_policy('mixed_float16')
@@ -132,29 +135,22 @@ def main(argv):
             step += 1
             if step.numpy() > FLAGS.num_iters_decay:
                 update_lr_by_iter(gen_opt, disc_opt, step, diff_iter, FLAGS.g_lr, FLAGS.d_lr)
-            x_fake, gen_out_src, gen_out_cls = predict_before_update(x_real, 
-                                                                     label_trg, 
-                                                                     gen, 
-                                                                     disc)
 
-            d_losses = train_d(step, 
-                               disc, 
+            d_losses = train_d(disc,
+                               gen,
                                x_real,
-                               x_fake,
                                label_org, 
                                label_trg, 
                                FLAGS.lambda_cls,
                                FLAGS.lambda_gp, 
-                               disc_opt)
+                               disc_opt) 
                                 
             update_loss_trackers(d_loss_list, d_losses)
 
-            if step % FLAGS.num_critic_updates == 0:
-                g_losses = train_g(step, 
+            if step.numpy() % FLAGS.num_critic_updates == 0:
+                g_losses = train_g(disc,
                                    gen, 
                                    x_real,
-                                   gen_out_src, 
-                                   gen_out_cls,
                                    label_trg, 
                                    FLAGS.lambda_cls,
                                    FLAGS.lambda_rec,
@@ -164,6 +160,10 @@ def main(argv):
 
             if step.numpy() == iters_per_epoch:
                 break
+
+            #if step.numpy() % 100 == 0:
+            #    fpath = os.path.join(FLAGS.test_result_dir, "{}-images.jpg".format(step.numpy()))
+            #    save_test_results(gen, test_imgs[:FLAGS.num_test], c_fixed_trg_list, fpath)
 
         end = time.time()
         print_log(ckpt.epoch.numpy(), start, end, d_losses, g_losses)

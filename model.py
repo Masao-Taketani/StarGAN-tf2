@@ -9,17 +9,17 @@ import tensorflow_addons as tfa
 # For testing
 INPUT_SHAPE = (128, 128, 3)
 C_DIM = 5
+#WEIGHT_INITIALIZER = tf.random_normal_initializer(mean=0.0, stddev=0.02)
+WEIGHT_INITIALIZER = "glorot_uniform"
 
 def get_norm_layer(norm_type):
     if norm_type.lower() == "batchnorm":
         return BatchNormalization()
     elif norm_type.lower() == "instancenorm":
         #return InstanceNormalization()
-        return tfa.layers.InstanceNormalization(axis=3, 
-                                   center=True, 
-                                   scale=True,
-                                   beta_initializer="random_uniform",
-                                   gamma_initializer="random_uniform")
+        return tfa.layers.InstanceNormalization(axis=-1, 
+                                                center=True, 
+                                                scale=True)
     else:
         raise ValueError("arg `norm_type` has to be either batchnorm "
                          "or instancenorm. What you specified is "
@@ -56,7 +56,8 @@ class ResidualBlock(Layer):
                                size, 
                                strides, 
                                padding=padding,
-                               use_bias=False)
+                               use_bias=False,
+                               kernel_initializer=WEIGHT_INITIALIZER)
         if self.norm_type:
             self.norm_layer_1 = get_norm_layer(norm_type)
         self.ReLU = ReLU()
@@ -64,7 +65,8 @@ class ResidualBlock(Layer):
                                size,
                                strides,
                                padding=padding,
-                               use_bias=False)
+                               use_bias=False,
+                               kernel_initializer=WEIGHT_INITIALIZER)
         if self.norm_type:
             self.norm_layer_2 = get_norm_layer(norm_type)
 
@@ -142,7 +144,8 @@ class Downsample(Layer):
                              size,
                              strides=strides,
                              padding=padding,
-                             use_bias=use_bias)
+                             use_bias=use_bias,
+                             kernel_initializer=WEIGHT_INITIALIZER)
         self.activation = get_activation(activation)
 
     def call(self, inputs):
@@ -188,7 +191,8 @@ class Upsample(Layer):
                                                size,
                                                strides=strides,
                                                padding=padding,
-                                               use_bias=use_bias)
+                                               use_bias=use_bias,
+                                               kernel_initializer=WEIGHT_INITIALIZER)
         if apply_dropout:
             self.dropout = Dropout(0.5)
         self.activation = get_activation(activation)

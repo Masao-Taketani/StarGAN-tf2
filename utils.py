@@ -137,14 +137,11 @@ def get_gradient_penalty(x, x_gen, discriminator):
 
 
 def get_classification_loss(target, logits):
-    #print("target", target)
-    #print("logits", logits)
     target = tf.cast(target, dtype=tf.float32)
     logits = tf.squeeze(logits)
     # Compute binary or softmax cross entropy loss.
     loss_total = tf.keras.losses.BinaryCrossentropy(from_logits=True)(target, 
                                                                       logits)
-    #loss_total = tf.nn.sigmoid_cross_entropy_with_logits(labels=target, logits=logits)
     loss = tf.reduce_mean(loss_total)
     return loss
 
@@ -268,6 +265,7 @@ def train_step(step,
     return d_loss_real, d_loss_fake, d_loss_cls, d_loss_gp, d_loss, g_loss_fake, g_loss_rec, g_loss_cls, g_loss
 
 
+@tf.function
 def predict_before_update(x_real, label_trg, gen, disc):
     x_fake = gen(x_real, label_trg, training=False)
     gen_out_src, gen_out_cls = disc(x_fake, training=False)
@@ -275,10 +273,9 @@ def predict_before_update(x_real, label_trg, gen, disc):
 
 
 @tf.function
-def train_disc(step, 
-               disc, 
+def train_disc(disc,
+               gen,
                x_real,
-               x_fake,
                label_org, 
                label_trg, 
                lambda_cls, 
@@ -291,6 +288,7 @@ def train_disc(step,
         d_loss_real = - get_mean_for_loss(real_out_src)
         d_loss_cls = get_classification_loss(label_org, real_out_cls)
         # Compute loss with fake images
+        x_fake = gen(x_real, label_trg, training=False)
         fake_out_src, fake_out_cls = disc(x_fake, training=True)
         d_loss_fake = get_mean_for_loss(fake_out_src)
         # Compute loss for gradient penalty
@@ -306,10 +304,9 @@ def train_disc(step,
 
 
 @tf.function
-def train_disc_mp(step, 
-                  disc, 
+def train_disc_mp(disc,
+                  gen,
                   x_real,
-                  x_fake,
                   label_org, 
                   label_trg, 
                   lambda_cls, 
@@ -322,6 +319,7 @@ def train_disc_mp(step,
         d_loss_real = - get_mean_for_loss(real_out_src)
         d_loss_cls = get_classification_loss(label_org, real_out_cls)
         # Compute loss with fake images
+        x_fake = gen(x_real, label_trg, training=False)
         fake_out_src, fake_out_cls = disc(x_fake, training=True)
         d_loss_fake = get_mean_for_loss(fake_out_src)
         # Compute loss for gradient penalty
@@ -339,11 +337,9 @@ def train_disc_mp(step,
 
 
 @tf.function
-def train_gen(step, 
-              gen, 
+def train_gen(disc,
+              gen,
               x_real,
-              gen_out_src, 
-              gen_out_cls,
               label_trg, 
               lambda_cls, 
               lambda_rec,
@@ -352,6 +348,7 @@ def train_gen(step,
     with tf.GradientTape() as tape:
         # Compute loss for original-to-target domain
         x_fake = gen(x_real, label_trg, training=True)
+        gen_out_src, gen_out_cls = disc(x_fake, training=False)
         g_loss_fake = - get_mean_for_loss(gen_out_src)
         g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
         # Compute loss for target-to-original domain
@@ -367,11 +364,9 @@ def train_gen(step,
 
 
 @tf.function
-def train_gen_mp(step, 
-                 gen, 
+def train_gen_mp(disc,
+                 gen,
                  x_real,
-                 gen_out_src, 
-                 gen_out_cls,
                  label_trg, 
                  lambda_cls, 
                  lambda_rec,
@@ -380,6 +375,7 @@ def train_gen_mp(step,
     with tf.GradientTape() as tape:
         # Compute loss for original-to-target domain
         x_fake = gen(x_real, label_trg, training=True)
+        gen_out_src, gen_out_cls = disc(x_fake, training=False)
         g_loss_fake = - get_mean_for_loss(gen_out_src)
         g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
         # Compute loss for target-to-original domain
@@ -397,12 +393,12 @@ def train_gen_mp(step,
 
 
 def print_log(epoch, start, end, d_losses, g_losses):
-    tf.print("\nTime taken for epoch {} is {} sec\n".format(epoch, 
-                                                         end - start))
+    tf.print("\nTime taken for epoch {} is {:.3f} sec\n".format(epoch, 
+                                                                round(end - start)))
     d_log = "d_loss: {:.3f} (d_loss_real: {:.3f}, d_loss_fake: {:.3f}, d_loss_gp: {:.3f}, d_loss_cls: {:.3f})"
     g_log = "g_loss: {:.3f} (g_loss_fake: {:.3f}, g_loss_rec: {:.3f}, g_loss_cls: {:.3f})"
-    tf.print(d_log.format(d_losses[0], d_losses[1], d_losses[2], d_losses[3], d_losses[4]))
-    tf.print(g_log.format(g_losses[0], g_losses[1], g_losses[2], g_losses[3]))
+    tf.print(d_log.format(d_losses[4], d_losses[0], d_losses[1], d_losses[2], d_losses[3]))
+    tf.print(g_log.format(g_losses[3], g_losses[0], g_losses[1], g_losses[2]))
 
 
 def preprocess_for_testing(img, c_dim):
