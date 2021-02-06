@@ -50,10 +50,16 @@ def read_and_decode_img(img_path):
     return img
 
 
-def preprocess_img(img, center_crop_size=178, size=128, use_aug=True):
+def preprocess_img(img, 
+                   center_crop_size=178, 
+                   size=128, 
+                   use_aug=True, 
+                   do_center_crop=True):
+
     if use_aug:
         img = random_horizontal_flip(img)
-    img = center_crop(img, center_crop_size)
+    if do_center_crop:
+        img = center_crop(img, center_crop_size)
     img = resize(img, size)
     img = normalize(img)
     return img
@@ -415,7 +421,6 @@ def preprocess_for_testing(img, c_dim):
 
 def save_img(tensor, fpath):
     bstr = tf.io.encode_jpeg(tensor)
-    tf.print("bstr", type(bstr.numpy()))
     with open(fpath, "wb") as f:
         f.write(bstr.numpy())
 
@@ -436,13 +441,13 @@ def postprocess_to_plot(results):
     return tensor
 
 
-def save_test_results(model, img_list, trg_list, fpath):
+def save_test_results(model, img_list, trg_list, fpath, do_center_crop=True):
     results = []
     c_dim = len(trg_list)
     trg_tensor = tf.convert_to_tensor(trg_list)
     for i, img_path in enumerate(img_list):
         img = read_and_decode_img(img_path)
-        img = preprocess_img(img, use_aug=False)
+        img = preprocess_img(img, use_aug=False, do_center_crop=do_center_crop)
         x = preprocess_for_testing(img, c_dim)
         result = model(x, trg_tensor[:, i, :])
         horizontal_img = make_img_horizontal(result)
