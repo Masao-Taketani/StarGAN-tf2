@@ -12,7 +12,7 @@
 **coming soon**
 
 ## Train
-If your GPU has Tensor Cores(compute capability 7.0 or higher), you can train the model as follows. Otherwise you need to set an option `--nouse_mp` to train.
+~~If your GPU has Tensor Cores(compute capability 7.0 or higher), you can train the model as follows. Otherwise you need to set an option `--nouse_mp` to train.~~
 ```
 python train.py
 ```

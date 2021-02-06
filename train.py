@@ -43,15 +43,15 @@ flags.DEFINE_float("d_lr", 0.0001, "learning rate for the discriminator")
 flags.DEFINE_float("beta1", 0.5, "beta1 for Adam optimizer")
 flags.DEFINE_float("beta2", 0.999, "beta2 for Adam optimizer")
 flags.DEFINE_integer("num_test", 10, "number of test examples")
-flags.DEFINE_bool("use_mp", True, "whether to use mixed precision for training")
+#flags.DEFINE_bool("use_mp", True, "whether to use mixed precision for training")
 
 
 #tf.config.experimental.enable_tensor_float_32_execution(enabled=False)
 
 
 def main(argv):
-    if FLAGS.use_mp:
-        mixed_precision.set_global_policy('mixed_float16')
+    #if FLAGS.use_mp:
+    #    mixed_precision.set_global_policy('mixed_float16')
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
@@ -84,14 +84,15 @@ def main(argv):
                                      FLAGS.selected_attrs)
 
     # Build the generator and discriminator
-    gen, disc = build_model(FLAGS.c_dim, FLAGS.use_mp)
+    #gen, disc = build_model(FLAGS.c_dim, FLAGS.use_mp)
+    gen, disc = build_model(FLAGS.c_dim, False)
 
     # Define the optimizers for the generator and the discriminator
     gen_opt = tf.keras.optimizers.Adam(FLAGS.g_lr, FLAGS.beta1, FLAGS.beta2)
     disc_opt = tf.keras.optimizers.Adam(FLAGS.d_lr, FLAGS.beta1, FLAGS.beta2)
-    if FLAGS.use_mp:
-        gen_opt = mixed_precision.LossScaleOptimizer(gen_opt)
-        disc_opt = mixed_precision.LossScaleOptimizer(disc_opt)
+    #if FLAGS.use_mp:
+    #    gen_opt = mixed_precision.LossScaleOptimizer(gen_opt)
+    #    disc_opt = mixed_precision.LossScaleOptimizer(disc_opt)
 
     # Set the checkpoint and the checkpoint manager.
     ckpt = tf.train.Checkpoint(epoch=tf.Variable(0, dtype=tf.int64),
@@ -115,7 +116,8 @@ def main(argv):
                                 )
 
     d_loss_list, g_loss_list = initialize_loss_trackers()
-    train_d, train_g = define_train_loop(FLAGS.use_mp)
+    #train_d, train_g = define_train_loop(FLAGS.use_mp)
+    train_d, train_g = define_train_loop(False)
 
     iters_per_epoch = FLAGS.num_iters // FLAGS.num_epochs
     diff_iter = FLAGS.num_iters - FLAGS.num_iters_decay
