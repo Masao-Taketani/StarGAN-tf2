@@ -1,5 +1,7 @@
 # StarGAN: Unified Generative Adversarial Networks for Multi-Domain Image-to-Image Translation
 
+<img src="imgs/demo1.png" align="center">
+
 ## TensorFlow Version
 2.4
 
