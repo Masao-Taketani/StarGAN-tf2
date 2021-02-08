@@ -1,4 +1,8 @@
+import matplotlib.pyplot as plt
+
 import tensorflow as tf
+
+from model import build_model
 
 
 IMG_SIZE = 256
@@ -454,3 +458,64 @@ def save_test_results(model, img_list, trg_list, fpath, do_center_crop=True):
         results.append(horizontal_img)
     tensor = postprocess_to_plot(results)
     save_img(tensor, fpath)
+
+
+def get_models_for_testing(attr_path="data/celeba/list_attr_celeba.txt",
+                           selected_attrs=["Black_Hair", "Blond_Hair", "Brown_Hair", "Male", "Young"],
+                           num_test=10,
+                           c_dim=5,
+                           g_lr=0.0001,
+                           d_lr=0.0001,
+                           beta1=0.5,
+                           beta2=0.999,
+                           ckpt_dir="ckpts/train/"):
+
+    # Build the generator and discriminator
+    gen, disc = build_model(c_dim, False)
+
+    # Define the optimizers for the generator and the discriminator
+    gen_opt = tf.keras.optimizers.Adam(g_lr, beta1, beta2)
+    disc_opt = tf.keras.optimizers.Adam(d_lr, beta1, beta2)
+
+    # Set the checkpoint and the checkpoint manager.
+    ckpt = tf.train.Checkpoint(gen=gen,
+                            disc=disc,
+                            gen_opt=gen_opt,
+                            disc_opt=disc_opt)
+
+    ckpt_manager = tf.train.CheckpointManager(ckpt,
+                                              ckpt_dir
+                                              ,max_to_keep=5)
+
+    # If a checkpoint exists, restore the latest checkpoint.
+    if ckpt_manager.latest_checkpoint:
+        ckpt.restore(ckpt_manager.latest_checkpoint)
+        print("Latest checkpoint is restored!")
+
+    return gen, disc
+
+
+def test_image(model, fpath, to_black_hair, to_blond_hair, to_brown_hair, to_male, to_young):
+    img = read_and_decode_img(fpath)
+    img = tf.image.resize(img, [128, 128], method="nearest")
+    org = img.numpy() / 255.0
+    plot_image(121, "original image", org)
+    img = normalize(img)
+    img = tf.expand_dims(img, axis=0)
+    c = tf.constant([[int(to_black_hair), 
+                      int(to_blond_hair), 
+                      int(to_brown_hair), 
+                      int(to_male), 
+                      int(to_young)]])
+    result = model(img, c)
+    result = tf.squeeze(result, axis=0)
+    result = denormalize(result)
+    result = result.numpy()
+    plot_image(122, "created image", result)
+
+
+def plot_image(coord, title, img):
+    plt.subplot(coord)
+    plt.title(title)
+    plt.imshow(img)
+    plt.axis("off")
