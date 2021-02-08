@@ -20,7 +20,7 @@ python train.py
 ## Test
 `test.ipynb` to test the model.<br>
 You can test your own image changing the file path and the arguments shown in the picture below.<br>
-![Test Result]("imgs/demo2.png")
+![Test Result](imgs/demo2.png)
 
 ## References
 - Paper
