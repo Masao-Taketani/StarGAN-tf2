@@ -511,7 +511,7 @@ def test_image(model, fpath, to_black_hair, to_blond_hair, to_brown_hair, to_mal
     result = tf.squeeze(result, axis=0)
     result = denormalize(result)
     result = result.numpy()
-    plot_image(122, "created image", result)
+    plot_image(122, "generated image", result)
 
 
 def plot_image(coord, title, img):

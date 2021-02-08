@@ -18,7 +18,9 @@ python train.py
 ```
 
 ## Test
-**coming soon**
+`test.ipynb` to test the model.<br>
+You can test your own image changing the file path and the arguments shown in the picture below.<br>
+<img src="imgs/demo1.png" align="left">
 
 ## References
 - Paper
