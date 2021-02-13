@@ -1,12 +1,13 @@
 # StarGAN: Unified Generative Adversarial Networks for Multi-Domain Image-to-Image Translation
 
 <img src="imgs/demo1.png" align="center">
+<img src="imgs/celeba_demo.png" align="center">
 
 ## TensorFlow Version
 2.4
 
 ## Datasets
-[CelebA](https://www.tensorflow.org/datasets/catalog/celeb_a)
+[CelebA](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html)
 
 ## Prepare the Dataset
 **coming soon**
