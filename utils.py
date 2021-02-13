@@ -40,7 +40,7 @@ def random_horizontal_flip(img):
 
 
 def resize(img, size=128):
-    img = tf.image.resize(img, 
+    img = tf.image.resize(img,
                           [size, size],
                           method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     return img
@@ -54,18 +54,20 @@ def read_and_decode_img(img_path):
     return img
 
 
-def preprocess_img(img, 
-                   center_crop_size=178, 
-                   size=128, 
-                   use_aug=True, 
-                   do_center_crop=True):
+def preprocess_img(img,
+                   center_crop_size=178,
+                   size=128,
+                   use_aug=True,
+                   do_center_crop=True,
+                   do_normalize=True):
 
     if use_aug:
         img = random_horizontal_flip(img)
     if do_center_crop:
         img = center_crop(img, center_crop_size)
     img = resize(img, size)
-    img = normalize(img)
+    if do_normalize:
+        img = normalize(img)
     return img
 
 
@@ -103,7 +105,7 @@ def define_train_loop(use_mp):
         return train_disc_mp, train_gen_mp
     else:
         return train_disc, train_gen
-        
+
 
 def store_loss_tracker(loss_list, losses):
     for name in losses:
@@ -120,7 +122,7 @@ def reset_loss_trackers(loss_list):
     for loss in loss_list:
         loss.reset_states()
 
-    
+
 def update_loss_trackers(loss_tracker_list, losses):
     for tracker, loss in zip(loss_tracker_list, losses):
         tracker(loss)
@@ -139,7 +141,7 @@ def get_gradient_penalty(x, x_gen, discriminator):
         # to get a gradient w.r.t x_hat, we need to record the value on the tape
         tape.watch(x_hat)
         out_src, _ = discriminator(x_hat, training=True)
-    
+
     gradients = tape.gradient(out_src, x_hat)
     l2_norm = tf.sqrt(tf.reduce_sum(gradients ** 2, axis=[1, 2, 3]))
     gp_loss = tf.reduce_mean((l2_norm - 1.0) ** 2)
@@ -220,17 +222,17 @@ https://github.com/tensorflow/tensorflow/issues/34983#issuecomment-743702919
 So I do not use the 'train_step' function.
 """
 @tf.function
-def train_step(step, 
-               gen, 
-               disc, 
-               x_real, 
-               label_org, 
-               label_trg, 
-               lambda_cls, 
-               lambda_gp, 
-               lambda_rec, 
-               num_critic_updates, 
-               disc_opt, 
+def train_step(step,
+               gen,
+               disc,
+               x_real,
+               label_org,
+               label_trg,
+               lambda_cls,
+               lambda_gp,
+               lambda_rec,
+               num_critic_updates,
+               disc_opt,
                gen_opt):
 
     g_loss_fake = None
@@ -286,10 +288,10 @@ def predict_before_update(x_real, label_trg, gen, disc):
 def train_disc(disc,
                gen,
                x_real,
-               label_org, 
-               label_trg, 
-               lambda_cls, 
-               lambda_gp, 
+               label_org,
+               label_trg,
+               lambda_cls,
+               lambda_gp,
                opt):
 
     with tf.GradientTape() as tape:
@@ -317,10 +319,10 @@ def train_disc(disc,
 def train_disc_mp(disc,
                   gen,
                   x_real,
-                  label_org, 
-                  label_trg, 
-                  lambda_cls, 
-                  lambda_gp, 
+                  label_org,
+                  label_trg,
+                  lambda_cls,
+                  lambda_gp,
                   opt):
 
     with tf.GradientTape() as tape:
@@ -350,8 +352,9 @@ def train_disc_mp(disc,
 def train_gen(disc,
               gen,
               x_real,
-              label_trg, 
-              lambda_cls, 
+              label_org,
+              label_trg,
+              lambda_cls,
               lambda_rec,
               opt):
 
@@ -362,7 +365,7 @@ def train_gen(disc,
         g_loss_fake = - get_mean_for_loss(gen_out_src)
         g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
         # Compute loss for target-to-original domain
-        x_rec = gen(x_fake, label_trg, training=True)
+        x_rec = gen(x_fake, label_org, training=True)
         g_loss_rec = get_l1_loss(x_real, x_rec)
         # Compute the total loss for the generator
         g_loss = g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
@@ -377,8 +380,9 @@ def train_gen(disc,
 def train_gen_mp(disc,
                  gen,
                  x_real,
-                 label_trg, 
-                 lambda_cls, 
+                 label_org,
+                 label_trg,
+                 lambda_cls,
                  lambda_rec,
                  opt):
 
@@ -389,7 +393,7 @@ def train_gen_mp(disc,
         g_loss_fake = - get_mean_for_loss(gen_out_src)
         g_loss_cls = get_classification_loss(label_trg, gen_out_cls)
         # Compute loss for target-to-original domain
-        x_rec = gen(x_fake, label_trg, training=True)
+        x_rec = gen(x_fake, label_org, training=True)
         g_loss_rec = get_l1_loss(x_real, x_rec)
         # Compute the total loss for the generator
         g_loss = g_loss_fake + lambda_rec * g_loss_rec + lambda_cls * g_loss_cls
@@ -403,7 +407,7 @@ def train_gen_mp(disc,
 
 
 def print_log(epoch, start, end, d_losses, g_losses):
-    tf.print("\nTime taken for epoch {} is {:.3f} sec\n".format(epoch, 
+    tf.print("\nTime taken for epoch {} is {:.3f} sec\n".format(epoch,
                                                                 round(end - start)))
     d_log = "d_loss: {:.3f} (d_loss_real: {:.3f}, d_loss_fake: {:.3f}, d_loss_gp: {:.3f}, d_loss_cls: {:.3f})"
     g_log = "g_loss: {:.3f} (g_loss_fake: {:.3f}, g_loss_rec: {:.3f}, g_loss_cls: {:.3f})"
@@ -445,13 +449,13 @@ def postprocess_to_plot(results):
     return tensor
 
 
-def save_test_results(model, img_list, trg_list, fpath, do_center_crop=True):
+def save_test_results(model, img_list, trg_list, fpath, do_center_crop=True, do_normalize=True):
     results = []
     c_dim = len(trg_list)
     trg_tensor = tf.convert_to_tensor(trg_list)
     for i, img_path in enumerate(img_list):
         img = read_and_decode_img(img_path)
-        img = preprocess_img(img, use_aug=False, do_center_crop=do_center_crop)
+        img = preprocess_img(img, use_aug=False, do_center_crop=do_center_crop, do_normalize=do_normalize)
         x = preprocess_for_testing(img, c_dim)
         result = model(x, trg_tensor[:, i, :])
         horizontal_img = make_img_horizontal(result)
@@ -519,3 +523,14 @@ def plot_image(coord, title, img):
     plt.title(title)
     plt.imshow(img)
     plt.axis("off")
+
+
+def save_input_imgs(inp_imgs, save_path):
+    input_imgs = []
+    for ipath in inp_imgs:
+        img = read_and_decode_img(ipath)
+        img = preprocess_img(img, use_aug=False, do_normalize=False)
+        input_imgs.append(img)
+
+    inputs = tf.concat(input_imgs, axis=0)
+    save_img(inputs, save_path)

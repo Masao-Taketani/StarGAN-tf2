@@ -16,8 +16,8 @@ from model import build_model
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("attr_path", 
-                    "data/celeba/list_attr_celeba.txt", 
+flags.DEFINE_string("attr_path",
+                    "data/celeba/list_attr_celeba.txt",
                     "path to the attribute label")
 flags.DEFINE_list("selected_attrs",
                   "Black_Hair, Blond_Hair, Brown_Hair, Male, Young",
@@ -62,7 +62,7 @@ def main(argv):
     os.makedirs(FLAGS.logdir, exist_ok=True)
     os.makedirs(FLAGS.test_result_dir, exist_ok=True)
 
-    _, _, test_imgs, test_lbls = get_data(FLAGS.attr_path, 
+    _, _, test_imgs, test_lbls = get_data(FLAGS.attr_path,
                                           FLAGS.selected_attrs)
 
     # Prepare the dataset for training and testing
@@ -79,8 +79,8 @@ def main(argv):
     train_dataset = train_dataset.batch(batch_size=FLAGS.batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
     # Get fixed inputs for testing and debugging.
-    c_fixed_trg_list = create_labels(test_lbls[:FLAGS.num_test], 
-                                     FLAGS.c_dim, 
+    c_fixed_trg_list = create_labels(test_lbls[:FLAGS.num_test],
+                                     FLAGS.c_dim,
                                      FLAGS.selected_attrs)
 
     # Build the generator and discriminator
@@ -108,8 +108,8 @@ def main(argv):
     if ckpt_manager.latest_checkpoint:
         ckpt.restore(ckpt_manager.latest_checkpoint)
         print("Latest checkpoint is restored!")
-        
-    # Create a summary writer to track the losses 
+
+    # Create a summary writer to track the losses
     summary_writer = tf.summary.create_file_writer(
                                     os.path.join(FLAGS.logdir,
                                     datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -141,19 +141,20 @@ def main(argv):
             d_losses = train_d(disc,
                                gen,
                                x_real,
-                               label_org, 
-                               label_trg, 
+                               label_org,
+                               label_trg,
                                FLAGS.lambda_cls,
-                               FLAGS.lambda_gp, 
-                               disc_opt) 
-                                
+                               FLAGS.lambda_gp,
+                               disc_opt)
+
             update_loss_trackers(d_loss_list, d_losses)
 
             if step.numpy() % FLAGS.num_critic_updates == 0:
                 g_losses = train_g(disc,
-                                   gen, 
+                                   gen,
                                    x_real,
-                                   label_trg, 
+                                   label_org,
+                                   label_trg,
                                    FLAGS.lambda_cls,
                                    FLAGS.lambda_rec,
                                    gen_opt)
